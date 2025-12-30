@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>组织管理模块 - 广西国企数据模拟版</title>
+    <title>组织管理模块 - 状态自动托管版</title>
     <!-- 引入 Element Plus 样式 -->
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
     <!-- 引入 Vue 3 -->
@@ -90,8 +90,15 @@
                 <el-form-item label="组织名称">
                     <el-input v-model="queryParams.name" placeholder="搜索一级/二级/三级组织" clearable style="width: 220px;"></el-input>
                 </el-form-item>
-                <el-form-item label="企业性质">
-                    <el-select v-model="queryParams.nature" placeholder="请选择企业性质" clearable style="width: 200px;">
+                <el-form-item label="组织状态">
+                    <el-select v-model="queryParams.status" placeholder="请选择状态" clearable style="width: 150px;">
+                        <el-option label="待签约" value="待签约"></el-option>
+                        <el-option label="服务中" value="服务中"></el-option>
+                        <el-option label="冻结" value="冻结"></el-option>
+                    </el-select>
+                </el-form-item>
+                <el-form-item label="组织性质">
+                    <el-select v-model="queryParams.nature" placeholder="请选择组织性质" clearable style="width: 200px;">
                         <el-option v-for="item in natureOptions" :key="item" :label="item" :value="item"></el-option>
                     </el-select>
                 </el-form-item>
@@ -125,19 +132,23 @@
                     class="flex-table"
                 >
                     <el-table-column type="selection" width="50" align="center"></el-table-column>
-                    <el-table-column label="组织名称" min-width="280" show-overflow-tooltip>
+                    <el-table-column label="组织名称" min-width="260" show-overflow-tooltip>
                         <template #default="scope">
-                            <!-- 有子级显示文件夹，无子级显示文件 -->
                             <el-icon v-if="scope.row.children && scope.row.children.length > 0" class="folder-icon"><Folder /></el-icon>
                             <el-icon v-else class="file-icon"><Document /></el-icon>
                             <span style="font-weight: 500;">{{ scope.row.name }}</span>
-                            <!-- 层级标签 -->
-                            <el-tag size="small" effect="plain" style="margin-left: 8px; border: none;" :type="scope.row.levelTag === '一级' ? 'danger' : (scope.row.levelTag === '二级' ? 'warning' : 'info')">
-                                {{ scope.row.levelTag }}
-                            </el-tag>
+                            <el-tag size="small" effect="plain" style="margin-left: 8px; border: none;">{{ scope.row.levelTag }}</el-tag>
                         </template>
                     </el-table-column>
-                    <el-table-column prop="nature" label="企业性质" width="140" align="center"></el-table-column>
+                    
+                    <!-- 列表依然保留组织状态 -->
+                    <el-table-column label="组织状态" width="100" align="center">
+                        <template #default="scope">
+                            <el-tag :type="getStatusType(scope.row.status)">{{ scope.row.status }}</el-tag>
+                        </template>
+                    </el-table-column>
+
+                    <el-table-column prop="nature" label="组织性质" width="140" align="center"></el-table-column>
                     <el-table-column prop="creditCode" label="信用代码" width="180" align="center">
                         <template #default="scope">{{ scope.row.creditCode || '-' }}</template>
                     </el-table-column>
@@ -167,6 +178,8 @@
                         :page-sizes="[10, 20, 50, 100]"
                         layout="total, prev, pager, next, sizes, jumper"
                         :total="pagination.total"
+                        @current-change="handlePageChange"
+                        @size-change="handleSizeChange"
                     ></el-pagination>
                 </div>
             </div>
@@ -211,14 +224,23 @@
                         </el-form-item>
                     </el-col>
                 </el-row>
-                <el-form-item label="企业性质" prop="nature">
-                    <el-select v-model="form.nature" :disabled="isView" placeholder="请选择企业性质" style="width: 100%;">
-                        <el-option v-for="item in natureOptions" :key="item" :label="item" :value="item"></el-option>
-                    </el-select>
-                </el-form-item>
-                <el-form-item label="信用代码" prop="creditCode">
-                    <el-input v-model="form.creditCode" :disabled="isView" placeholder="请输入18位统一社会信用代码" maxlength="18" show-word-limit></el-input>
-                </el-form-item>
+                
+                <el-row :gutter="20">
+                    <el-col :span="12">
+                         <el-form-item label="组织性质" prop="nature">
+                            <el-select v-model="form.nature" :disabled="isView" placeholder="请选择组织性质" style="width: 100%;">
+                                <el-option v-for="item in natureOptions" :key="item" :label="item" :value="item"></el-option>
+                            </el-select>
+                        </el-form-item>
+                    </el-col>
+                    <el-col :span="12">
+                        <!-- 修改点：将信用代码移动到此处，替代原先的组织状态，保持布局平衡 -->
+                        <el-form-item label="信用代码" prop="creditCode">
+                            <el-input v-model="form.creditCode" :disabled="isView" placeholder="请输入18位统一社会信用代码" maxlength="18" show-word-limit></el-input>
+                        </el-form-item>
+                    </el-col>
+                </el-row>
+
                 <el-form-item label="注册入市时间" prop="regTime">
                     <el-date-picker 
                         v-model="form.regTime" 
@@ -264,10 +286,7 @@
                         </el-form-item>
                     </el-col>
                 </el-row>
-                <el-form-item label="计量点个数" prop="meterCount">
-                    <el-input v-model="form.meterCount" disabled placeholder="系统自动生成"></el-input>
-                    <div class="form-tip">计量点信息维护后自动生成</div>
-                </el-form-item>
+                
                 <el-row :gutter="20">
                     <el-col :span="12">
                         <el-form-item label="管理员" prop="admin">
@@ -348,7 +367,7 @@
 </div>
 
 <script>
-    const { createApp, ref, reactive } = Vue;
+    const { createApp, ref, reactive, onMounted } = Vue;
     const { ElMessage, ElMessageBox, ElLoading } = ElementPlus;
     const { Search, Refresh, Plus, Upload, Download, Delete, Folder, Document, UploadFilled, CircleCheckFilled } = ElementPlusIconsVue;
 
@@ -357,13 +376,11 @@
             // --- 基础配置 ---
             const natureOptions = ['国有企业', '集体企业', '民营企业', '混合所有制企业', '外资企业', '政府单位', '事业单位'];
             const level1Options = ref([
-                { value: '广西北投信创科技投资集团', label: '广西北投信创科技投资集团' },
-                { value: '南宁轨道交通集团', label: '南宁轨道交通集团' },
-                { value: '广西路桥工程集团', label: '广西路桥工程集团' },
-                { value: '广西投资集团有限公司', label: '广西投资集团有限公司' },
-                { value: '广西北部湾国际港务集团', label: '广西北部湾国际港务集团' }
+                { value: '广西北部湾投资集团有限公司', label: '广西北部湾投资集团有限公司' },
+                { value: '广西交通投资集团有限公司', label: '广西交通投资集团有限公司' },
+                { value: '广西北部湾国际港务集团有限公司', label: '广西北部湾国际港务集团有限公司' }
             ]);
-            const level2Options = ref([{ value: '北投信创技术分公司', label: '北投信创技术分公司' }]);
+            const level2Options = ref([{ value: '广西北投信创科技投资集团有限公司', label: '广西北投信创科技投资集团有限公司' }]);
 
             const areaOptions = [
                 {
@@ -371,12 +388,6 @@
                     children: [
                         { value: 'Nanning', label: '南宁市', children: [{ value: 'Qingxiu', label: '青秀区' }, { value: 'Xingning', label: '兴宁区' }] },
                         { value: 'Liuzhou', label: '柳州市', children: [{ value: 'Chengzhong', label: '城中区' }] }
-                    ]
-                },
-                {
-                    value: 'Guangdong', label: '广东省',
-                    children: [
-                        { value: 'Guangzhou', label: '广州市', children: [{ value: 'Tianhe', label: '天河区' }] }
                     ]
                 }
             ];
@@ -389,159 +400,110 @@
             const isView = ref(false);
             const formRef = ref(null);
             const selection = ref([]);
-            const pagination = reactive({ currentPage: 1, pageSize: 10, total: 25 }); // 模拟25条数据
-            const queryParams = reactive({ name: '', nature: '' });
+            
+            // 完整数据（模拟数据库）
+            const allData = [
+                // 1. 广西北部湾投资集团有限公司
+                {
+                    id: 1, name: '广西北部湾投资集团有限公司', levelTag: '一级', status: '服务中', nature: '国有企业', creditCode: '914500001234567801', meterCount: 158, admin: '张伟', contact: '13800138001', regTime: '2007-06-28', area: ['Guangxi', 'Nanning', 'Qingxiu'], detailAddress: '中泰路11号', longitude: '108.3945', latitude: '22.7932',
+                    children: [
+                        { id: 11, name: '广西路桥工程集团有限公司', levelTag: '二级', status: '服务中', nature: '国有企业', creditCode: '914500001234567811', meterCount: 45, admin: '李强', contact: '13800138011', regTime: '2008-01-15', area: ['Guangxi', 'Nanning', 'Qingxiu'], detailAddress: '东葛路', longitude: '108.3999', latitude: '22.8000', children: [] },
+                        { id: 12, name: '广西北投信创科技投资集团有限公司', levelTag: '二级', status: '服务中', nature: '国有企业', creditCode: '914500001234567812', meterCount: 22, admin: '王建国', contact: '13800138012', regTime: '2019-09-01', area: ['Guangxi', 'Nanning', 'Qingxiu'], detailAddress: '飞云路', longitude: '108.3900', latitude: '22.7900', children: [
+                            { id: 121, name: '北投信创技术创新中心', levelTag: '三级', status: '服务中', nature: '国有企业', creditCode: '914500001234567899', meterCount: 5, admin: '刘洋', contact: '13800138099', regTime: '2020-03-12', area: [], detailAddress: '', longitude: '', latitude: '', children: [] }
+                        ]}
+                    ]
+                },
+                // 2. 广西交通投资集团有限公司
+                {
+                    id: 2, name: '广西交通投资集团有限公司', levelTag: '一级', status: '服务中', nature: '国有企业', creditCode: '914500001234567802', meterCount: 320, admin: '赵敏', contact: '13900139002', regTime: '2008-07-28', area: ['Guangxi', 'Nanning', 'Qingxiu'], detailAddress: '民族大道146号', longitude: '108.4012', latitude: '22.8105',
+                    children: [
+                        { id: 21, name: '广西交投物流集团有限公司', levelTag: '二级', status: '服务中', nature: '国有企业', creditCode: '914500001234567821', meterCount: 60, admin: '陈平', contact: '13900139021', regTime: '2010-05-20', area: [], detailAddress: '', longitude: '', latitude: '', children: [] },
+                        { id: 22, name: '广西高速公路投资有限公司', levelTag: '二级', status: '服务中', nature: '国有企业', creditCode: '914500001234567822', meterCount: 120, admin: '黄勇', contact: '13900139022', regTime: '2009-11-11', area: [], detailAddress: '', longitude: '', latitude: '', children: [] }
+                    ]
+                },
+                // 3. 广西北部湾国际港务集团有限公司
+                {
+                    id: 3, name: '广西北部湾国际港务集团有限公司', levelTag: '一级', status: '服务中', nature: '国有企业', creditCode: '914500001234567803', meterCount: 210, admin: '周杰', contact: '13700137003', regTime: '2007-02-14', area: ['Guangxi', 'Nanning', 'Qingxiu'], detailAddress: '金浦路', longitude: '108.3800', latitude: '22.8100',
+                    children: [
+                        { id: 31, name: '北海港股份有限公司', levelTag: '二级', status: '待签约', nature: '国有企业', creditCode: '914500001234567831', meterCount: 0, admin: '吴刚', contact: '13700137031', regTime: '1995-06-08', area: [], detailAddress: '', longitude: '', latitude: '', children: [] }
+                    ]
+                },
+                // 4. 广西投资集团有限公司
+                {
+                    id: 4, name: '广西投资集团有限公司', levelTag: '一级', status: '服务中', nature: '国有企业', creditCode: '914500001234567804', meterCount: 450, admin: '郑丽', contact: '13600136004', regTime: '1996-03-18', area: ['Guangxi', 'Nanning', 'Qingxiu'], detailAddress: '民族大道109号', longitude: '108.3750', latitude: '22.8150',
+                    children: [
+                        { id: 41, name: '广西广投能源集团有限公司', levelTag: '二级', status: '服务中', nature: '国有企业', creditCode: '914500001234567841', meterCount: 88, admin: '孙红', contact: '13600136041', regTime: '2005-08-08', area: [], detailAddress: '', longitude: '', latitude: '', children: [] }
+                    ]
+                },
+                // 5. 广西现代物流集团有限公司
+                {
+                    id: 5, name: '广西现代物流集团有限公司', levelTag: '一级', status: '服务中', nature: '国有企业', creditCode: '914500001234567805', meterCount: 95, admin: '冯涛', contact: '13500135005', regTime: '1998-12-12', area: [], detailAddress: '', longitude: '', latitude: '',
+                    children: [
+                        { id: 51, name: '广西供应链服务集团有限公司', levelTag: '二级', status: '冻结', nature: '国有企业', creditCode: '914500001234567851', meterCount: 15, admin: '蒋明', contact: '13500135051', regTime: '2015-04-01', area: [], detailAddress: '', longitude: '', latitude: '', children: [] }
+                    ]
+                },
+                // 6. 广西建工集团有限责任公司
+                { id: 6, name: '广西建工集团有限责任公司', levelTag: '一级', status: '服务中', nature: '国有企业', creditCode: '914500001234567806', meterCount: 300, admin: '沈阳', contact: '13400134006', regTime: '1996-05-20', area: [], detailAddress: '', longitude: '', latitude: '', children: [] },
+                // 7. 广西林业集团有限公司
+                { id: 7, name: '广西林业集团有限公司', levelTag: '一级', status: '待签约', nature: '国有企业', creditCode: '914500001234567807', meterCount: 0, admin: '韩雪', contact: '13300133007', regTime: '2008-09-09', area: [], detailAddress: '', longitude: '', latitude: '', children: [] },
+                // 8. 广西农村投资集团有限公司
+                { id: 8, name: '广西农村投资集团有限公司', levelTag: '一级', status: '服务中', nature: '国有企业', creditCode: '914500001234567808', meterCount: 110, admin: '杨光', contact: '13200132008', regTime: '2016-01-22', area: [], detailAddress: '', longitude: '', latitude: '', children: [] },
+                // 9. 广西旅游发展集团有限公司
+                {
+                    id: 9, name: '广西旅游发展集团有限公司', levelTag: '一级', status: '服务中', nature: '国有企业', creditCode: '914500001234567809', meterCount: 85, admin: '朱丽', contact: '13100131009', regTime: '2014-02-18', area: [], detailAddress: '', longitude: '', latitude: '',
+                    children: [
+                        { id: 91, name: '广西旅发置业集团有限公司', levelTag: '二级', status: '服务中', nature: '国有企业', creditCode: '914500001234567891', meterCount: 20, admin: '秦天', contact: '13100131091', regTime: '2015-06-06', area: [], detailAddress: '', longitude: '', latitude: '', children: [] }
+                    ]
+                },
+                // 10. 广西机场管理集团有限责任公司
+                { id: 10, name: '广西机场管理集团有限责任公司', levelTag: '一级', status: '服务中', nature: '国有企业', creditCode: '914500001234567810', meterCount: 75, admin: '许静', contact: '13000130010', regTime: '2003-12-25', area: [], detailAddress: '', longitude: '', latitude: '', children: [] },
+                // 11. 广西柳州钢铁集团有限公司
+                { id: 11, name: '广西柳州钢铁集团有限公司', levelTag: '一级', status: '服务中', nature: '国有企业', creditCode: '914500001234567811', meterCount: 500, admin: '何平', contact: '18900189011', regTime: '1958-07-01', area: ['Guangxi', 'Liuzhou', 'Chengzhong'], detailAddress: '北雀路', longitude: '109.4123', latitude: '24.3145', children: [] },
+                // 12. 广西宏桂资本运营集团有限公司
+                { id: 12, name: '广西宏桂资本运营集团有限公司', levelTag: '一级', status: '待签约', nature: '国有企业', creditCode: '914500001234567812', meterCount: 0, admin: '曹操', contact: '18800188012', regTime: '2008-08-08', area: [], detailAddress: '', longitude: '', latitude: '', children: [] }
+            ];
+
+            const tableData = ref([]);
+            const pagination = reactive({ currentPage: 1, pageSize: 10, total: 12 });
+            const queryParams = reactive({ name: '', nature: '', status: '' });
             const importResult = reactive({ total: 0, successCount: 0, failCount: 0, failList: [], successList: [] });
 
-            // --- 模拟数据：广西国企架构 (2页数据模拟，当前展示Page 1) ---
-            const tableData = ref([
-                {
-                    id: 1, 
-                    name: '广西投资集团有限公司', 
-                    levelTag: '一级', 
-                    nature: '国有企业', creditCode: '914500001982223456', meterCount: 45, admin: '张伟', contact: '13877110001', 
-                    regTime: '1996-03-18', area: ['Guangxi', 'Nanning', 'Qingxiu'], detailAddress: '民歌湖广场A座', longitude: '108.3912', latitude: '22.8015',
-                    children: [
-                        {
-                            id: 11,
-                            name: '广西广投能源集团有限公司',
-                            levelTag: '二级',
-                            nature: '国有企业', creditCode: '914500001983334567', meterCount: 20, admin: '李强', contact: '13977110002',
-                            regTime: '2003-05-20', area: [], detailAddress: '', longitude: '', latitude: '',
-                            children: [
-                                {
-                                    id: 111,
-                                    name: '广投北海发电有限公司',
-                                    levelTag: '三级',
-                                    nature: '国有企业', creditCode: '914505001984445678', meterCount: 12, admin: '王刚', contact: '13777110003',
-                                    regTime: '2010-09-10', children: []
-                                }
-                            ]
-                        }
-                    ]
-                },
-                {
-                    id: 2, 
-                    name: '广西北部湾投资集团有限公司', 
-                    levelTag: '一级', 
-                    nature: '国有企业', creditCode: '914500006717551234', meterCount: 38, admin: '韦海峰', contact: '13877110004', 
-                    regTime: '2008-02-15', area: ['Guangxi', 'Nanning', 'Qingxiu'], detailAddress: '飞云路6号', longitude: '108.3945', latitude: '22.7932',
-                    children: [
-                        {
-                            id: 21,
-                            name: '广西北投信创科技投资集团',
-                            levelTag: '二级',
-                            nature: '国有企业', creditCode: '91450100XXXXXXXX01', meterCount: 15, admin: '陈明', contact: '13677110005',
-                            regTime: '2020-01-15', area: [], detailAddress: '技术中心', longitude: '', latitude: '',
-                            children: [
-                                {
-                                    id: 211,
-                                    name: '北投信创软件研发中心',
-                                    levelTag: '三级',
-                                    nature: '国有企业', creditCode: '91450100XXXXXXXX99', meterCount: 5, admin: '刘洋', contact: '13577110006',
-                                    regTime: '2021-06-01', children: []
-                                }
-                            ]
-                        }
-                    ]
-                },
-                {
-                    id: 3, 
-                    name: '广西交通投资集团有限公司', 
-                    levelTag: '一级', 
-                    nature: '国有企业', creditCode: '914500006777661234', meterCount: 60, admin: '赵敏', contact: '13477110007', 
-                    regTime: '2008-07-28', area: ['Guangxi', 'Nanning', 'Qingxiu'], detailAddress: '民族大道152号', longitude: '108.3888', latitude: '22.8123',
-                    children: [
-                        {
-                            id: 31,
-                            name: '广西高速公路投资有限公司',
-                            levelTag: '二级',
-                            nature: '国有企业', creditCode: '914500007888772345', meterCount: 30, admin: '周杰', contact: '13377110008',
-                            regTime: '2009-03-12', children: []
-                        }
-                    ]
-                },
-                {
-                    id: 4, 
-                    name: '广西北部湾国际港务集团有限公司', 
-                    levelTag: '一级', 
-                    nature: '国有企业', creditCode: '914500006699881234', meterCount: 55, admin: '吴平', contact: '13277110009', 
-                    regTime: '2007-02-14', area: ['Guangxi', 'Nanning', 'Qingxiu'], detailAddress: '港务大厦', longitude: '108.3750', latitude: '22.8080',
-                    children: [
-                        {
-                            id: 41,
-                            name: '广西北港大数据有限公司',
-                            levelTag: '二级',
-                            nature: '国有企业', creditCode: '914501008999001234', meterCount: 8, admin: '郑浩', contact: '13177110010',
-                            regTime: '2018-11-11', children: []
-                        }
-                    ]
-                },
-                {
-                    id: 5, 
-                    name: '广西机场管理集团有限责任公司', 
-                    levelTag: '一级', 
-                    nature: '国有企业', creditCode: '914500007565431234', meterCount: 25, admin: '孙俪', contact: '13077110011', 
-                    regTime: '2003-12-25', area: ['Guangxi', 'Nanning', 'Qingxiu'], detailAddress: '吴圩国际机场', longitude: '108.1720', latitude: '22.6070',
-                    children: []
-                },
-                {
-                    id: 6, 
-                    name: '广西农垦集团有限责任公司', 
-                    levelTag: '一级', 
-                    nature: '国有企业', creditCode: '914500001986661234', meterCount: 40, admin: '钱学森', contact: '18977110012', 
-                    regTime: '1951-01-01', area: ['Guangxi', 'Nanning', 'Qingxiu'], detailAddress: '民族大道32号', longitude: '108.3300', latitude: '22.8150',
-                    children: []
-                },
-                {
-                    id: 7, 
-                    name: '广西现代物流集团有限公司', 
-                    levelTag: '一级', 
-                    nature: '国有企业', creditCode: '914500002987771234', meterCount: 18, admin: '冯唐', contact: '18877110013', 
-                    regTime: '1995-05-18', area: ['Guangxi', 'Nanning', 'Xingning'], detailAddress: '物流园区1号', longitude: '108.3500', latitude: '22.8500',
-                    children: []
-                },
-                {
-                    id: 8, 
-                    name: '广西农村投资集团有限公司', 
-                    levelTag: '一级', 
-                    nature: '国有企业', creditCode: '914500003988881234', meterCount: 15, admin: '陈楚', contact: '18777110014', 
-                    regTime: '2016-03-30', area: ['Guangxi', 'Nanning', 'Qingxiu'], detailAddress: '厢竹大道', longitude: '108.3600', latitude: '22.8300',
-                    children: []
-                },
-                {
-                    id: 9, 
-                    name: '广西旅游发展集团有限公司', 
-                    levelTag: '一级', 
-                    nature: '国有企业', creditCode: '914500004989991234', meterCount: 22, admin: '卫青', contact: '18677110015', 
-                    regTime: '2014-06-18', area: ['Guangxi', 'Nanning', 'Qingxiu'], detailAddress: '五象新区', longitude: '108.4000', latitude: '22.7500',
-                    children: []
-                },
-                {
-                    id: 10, 
-                    name: '广西柳州钢铁集团有限公司', 
-                    levelTag: '一级', 
-                    nature: '国有企业', creditCode: '914502005990001234', meterCount: 100, admin: '霍去病', contact: '18577110016', 
-                    regTime: '1958-07-01', area: ['Guangxi', 'Liuzhou', 'Chengzhong'], detailAddress: '北雀路117号', longitude: '109.4000', latitude: '24.3500',
-                    children: [
-                        {
-                            id: 101,
-                            name: '广西柳钢气体有限责任公司',
-                            levelTag: '二级',
-                            nature: '国有企业', creditCode: '914502006001111234', meterCount: 10, admin: '辛弃疾', contact: '18477110017',
-                            regTime: '2005-08-08', children: []
-                        }
-                    ]
-                }
-            ]);
-
             const form = reactive({
-                id: null, level1Name: '', level2Name: '', level3Name: '', nature: '', creditCode: '', 
+                id: null, level1Name: '', level2Name: '', level3Name: '', nature: '', creditCode: '', status: '待签约',
                 regTime: '', area: [], detailAddress: '', longitude: '', latitude: '',
                 meterCount: 0, admin: '', contact: '', remark: ''
             });
 
+            // --- 分页与数据处理 ---
+            const updateTableData = () => {
+                const start = (pagination.currentPage - 1) * pagination.pageSize;
+                const end = start + pagination.pageSize;
+                tableData.value = allData.slice(start, end);
+                pagination.total = allData.length;
+            };
+
+            const handlePageChange = (val) => {
+                pagination.currentPage = val;
+                updateTableData();
+            };
+
+            const handleSizeChange = (val) => {
+                pagination.pageSize = val;
+                pagination.currentPage = 1;
+                updateTableData();
+            };
+
+            onMounted(() => {
+                updateTableData();
+            });
+
             // --- 逻辑方法 ---
+
+            const getStatusType = (status) => {
+                if (status === '服务中') return 'success';
+                if (status === '冻结') return 'danger';
+                return 'info';
+            };
 
             const autoGeoCode = () => {
                 if (!form.detailAddress) return;
@@ -570,7 +532,7 @@
                 level1Name: [{ required: true, message: '请输入或选择一级组织', trigger: 'change' }],
                 level2Name: [{ validator: validateLevel2, trigger: 'change' }, { validator: validateLevel2, trigger: 'blur' }],
                 level3Name: [{ validator: validateLevel3, trigger: 'change' }, { validator: validateLevel3, trigger: 'blur' }],
-                nature: [{ required: true, message: '请选择企业性质', trigger: 'change' }],
+                nature: [{ required: true, message: '请选择组织性质', trigger: 'change' }],
                 creditCode: [{ required: true, message: '请输入信用代码', trigger: 'blur' }, { pattern: /^.{18}$/, message: '信用代码必须为18位', trigger: 'blur' }],
                 admin: [{ required: true, message: '请输入管理员姓名', trigger: 'blur' }],
                 contact: [{ required: true, message: '请输入联系方式', trigger: 'blur' }, { pattern: /^\d{11}$/, message: '联系方式必须为11位纯数字', trigger: 'blur' }]
@@ -588,7 +550,7 @@
             };
             
             const downloadTemplate = () => {
-                const headers = ["一级组织(必填)", "二级组织", "三级组织", "企业性质(必填)", "信用代码(必填)", "注册入市时间(YYYY-MM-DD)", "管理员(必填)", "联系方式(必填)", "备注"];
+                const headers = ["一级组织(必填)", "二级组织", "三级组织", "组织性质(必填)", "信用代码(必填)", "注册入市时间(YYYY-MM-DD)", "管理员(必填)", "联系方式(必填)", "备注"];
                 const sampleData = [["示例集团公司", "示例分公司", "", "国有企业", "91450100XXXXXXXX88", "2023-01-15", "张三", "13800000000", "这是一个示例"]];
                 const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleData]);
                 const wb = XLSX.utils.book_new();
@@ -616,7 +578,7 @@
                     const row = rows[i];
                     const [l1, l2, l3, nat, code, reg, adm, con, rem] = [0,1,2,3,4,5,6,7,8].map(idx => (row[idx]||'').toString().trim());
                     const errs = [];
-                    if (!l1) errs.push('一级组织空'); if (!nat) errs.push('性质空'); if (!code) errs.push('代码空'); if (!adm) errs.push('管理员空'); if (!con) errs.push('联系方式空');
+                    if (!l1) errs.push('一级组织空'); if (!nat) errs.push('组织性质空'); if (!code) errs.push('代码空'); if (!adm) errs.push('管理员空'); if (!con) errs.push('联系方式空');
                     if (con && !/^\d{11}$/.test(con)) errs.push('联系方式格式错误');
                     if (code && !/^.{18}$/.test(code)) errs.push('代码格式错误');
                     if (code && existingCodes.includes(code)) errs.push('代码重复');
@@ -624,6 +586,7 @@
                     if (errs.length) importResult.failList.push({ rowNum: i+1, level1Name: l1, creditCode: code, reason: errs.join('; ') });
                     else importResult.successList.push({ 
                         id: Date.now()+i, name: l1, levelTag:'一级', nature:nat, creditCode:code, meterCount:0, admin:adm, contact:con, 
+                        status: '待签约',
                         regTime: reg || '',
                         area: [], detailAddress: '', longitude: '', latitude: '',
                         children:[] 
@@ -679,10 +642,11 @@
                 if (formRef.value) formRef.value.resetFields(); 
                 Object.keys(form).forEach(k => form[k] = k==='meterCount'?0 : (Array.isArray(form[k]) ? [] : '')); 
                 form.id=null; 
+                form.status = '待签约'; 
             };
             const handleSelectionChange = (val) => selection.value = val;
             const handleSearch = () => loading.value = true && setTimeout(() => loading.value = false, 500);
-            const resetQuery = () => { queryParams.name = ''; queryParams.nature = ''; handleSearch(); };
+            const resetQuery = () => { queryParams.name = ''; queryParams.nature = ''; queryParams.status = ''; handleSearch(); };
             const formatPhone = (phone) => phone ? phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2') : '';
 
             return {
@@ -690,7 +654,8 @@
                 loading, dialogVisible, importDialogVisible, dialogTitle, formRef, selection, pagination, queryParams, form, tableData, rules, importResult,
                 isView,
                 handleSearch, resetQuery, handleAdd, handleEdit, handleView, handleDelete, handleBatchDelete, handleExport, submitForm, submitAndContinue, handleSelectionChange, formatPhone, handleLevel1Change,
-                openImportDialog, downloadTemplate, handleFileChange, downloadErrorReport, autoGeoCode,
+                openImportDialog, downloadTemplate, handleFileChange, downloadErrorReport, autoGeoCode, getStatusType,
+                handlePageChange, handleSizeChange,
                 Search, Refresh, Plus, Upload, Download, Delete, Folder, Document, UploadFilled, CircleCheckFilled
             };
         }
