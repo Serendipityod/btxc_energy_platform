@@ -296,6 +296,18 @@
             <span class="search-label">关联收入合同</span>
             <input type="text" class="ant-input" id="search_assoc" style="width: 180px;" placeholder="模糊检索收入合同">
         </div>
+        
+        <!-- 新增：合同状态检索 -->
+        <div class="search-item">
+            <span class="search-label">合同状态</span>
+            <select class="ant-select" id="search_status" style="width: 120px;">
+                <option value="">全部</option>
+                <option value="active">生效中</option>
+                <option value="draft">草稿</option>
+                <option value="expired">已到期</option>
+                <option value="terminated">已终止</option>
+            </select>
+        </div>
 
         <div class="search-item">
             <span class="search-label">合同编号</span>
@@ -755,6 +767,7 @@
     }
 
     function resetSearch() {
+        document.getElementById('search_status').value = ''; // 重置状态
         document.getElementById('search_no').value = '';
         document.getElementById('search_name').value = '';
         document.getElementById('search_assoc').value = '';
@@ -774,11 +787,13 @@
         const thead = document.getElementById('tableHead');
         tbody.innerHTML = '';
 
+        const filterStatus = document.getElementById('search_status').value; // 获取状态筛选
         const filterNo = document.getElementById('search_no').value.toLowerCase();
         const filterName = document.getElementById('search_name').value.toLowerCase();
         const filterAssoc = document.getElementById('search_assoc').value.toLowerCase(); // 关联收入模糊搜
 
         const filterFn = (item) => {
+            const matchStatus = filterStatus ? item.status === filterStatus : true; // 状态筛选
             const matchNo = item.contractNo.toLowerCase().includes(filterNo);
             const matchName = item.contractName.toLowerCase().includes(filterName);
             // 关联ID精确筛选
@@ -789,7 +804,7 @@
                 const rev = REVENUE_DATA.find(r => r.id === item.linkRevId);
                 matchAssoc = rev && rev.contractName.toLowerCase().includes(filterAssoc);
             }
-            return matchNo && matchName && matchLink && matchAssoc;
+            return matchStatus && matchNo && matchName && matchLink && matchAssoc;
         };
 
         if (currentTab === 'revenue') {
