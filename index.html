@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>计量点管理模块 - 分页样式升级</title>
+    <title>计量点管理模块 - 状态检索增强版</title>
     <!-- 引入样式 -->
     <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css">
     <style>
@@ -79,7 +79,7 @@
             font-size: 14px;
             padding-right: 8px;
             overflow: hidden;
-            user-select: none; /* 防止拖拽时选中文字 */
+            user-select: none;
         }
         .node-label {
             overflow: hidden;
@@ -122,21 +122,18 @@
             flex-direction: column;
         }
 
-        /* --- 分页样式定制 (重点修改区域) --- */
+        /* 分页样式定制 */
         .pagination-container {
             margin-top: 15px;
             text-align: right;
         }
-        /* 覆盖 Element UI 默认样式以匹配截图 */
         .custom-pagination.el-pagination {
             font-weight: normal;
             color: #333;
         }
-        /* 总条数 */
         .custom-pagination .el-pagination__total {
             margin-right: 15px;
         }
-        /* 页码按钮 */
         .custom-pagination .el-pager li {
             background-color: #fff;
             border: 1px solid #DCDFE6;
@@ -144,21 +141,18 @@
             margin: 0 4px;
             min-width: 32px;
             height: 32px;
-            line-height: 30px; /* 减去边框 */
+            line-height: 30px;
             font-weight: normal;
         }
-        /* 选中页码 */
         .custom-pagination .el-pager li.active {
             color: #409EFF;
             border-color: #409EFF;
-            background-color: #ecf5ff; /* 浅蓝背景 */
+            background-color: #ecf5ff;
             cursor: default;
         }
-        /* 悬浮页码 */
         .custom-pagination .el-pager li:hover {
             color: #409EFF;
         }
-        /* 上一页/下一页按钮 */
         .custom-pagination .btn-prev, 
         .custom-pagination .btn-next {
             background-color: transparent;
@@ -168,7 +162,6 @@
             height: 32px;
             line-height: 32px;
         }
-        /* 每页条数选择器 */
         .custom-pagination .el-sizes {
             margin: 0 10px;
         }
@@ -177,7 +170,6 @@
             height: 32px;
             line-height: 32px;
         }
-        /* 跳转输入框 */
         .custom-pagination .el-pagination__jump {
             margin-left: 10px;
         }
@@ -223,17 +215,25 @@
                     placeholder="选择客户(支持任意层级)"
                     clearable
                     filterable
-                    style="width: 220px">
+                    style="width: 200px">
                 </el-cascader>
             </el-form-item>
             <el-form-item label="计量点名称">
-                <el-input v-model="searchForm.name" placeholder="模糊检索" clearable></el-input>
+                <el-input v-model="searchForm.name" placeholder="模糊检索" clearable style="width: 150px"></el-input>
             </el-form-item>
             <el-form-item label="编号">
-                <el-input v-model="searchForm.code" placeholder="精准检索" style="width: 150px" clearable></el-input>
+                <el-input v-model="searchForm.code" placeholder="精准检索" style="width: 140px" clearable></el-input>
             </el-form-item>
+            
+            <!-- 新增：状态检索 -->
+            <el-form-item label="状态">
+                <el-select v-model="searchForm.status" placeholder="全部" clearable style="width: 100px">
+                    <el-option v-for="st in dictionary.statuses" :key="st" :label="st" :value="st"></el-option>
+                </el-select>
+            </el-form-item>
+
             <el-form-item label="用电类别">
-                <el-select v-model="searchForm.category" placeholder="全部" clearable style="width: 120px">
+                <el-select v-model="searchForm.category" placeholder="全部" clearable style="width: 110px">
                     <el-option v-for="type in dictionary.categories" :key="type" :label="type" :value="type"></el-option>
                 </el-select>
             </el-form-item>
@@ -459,10 +459,12 @@
             return {
                 loading: false,
                 submitting: false,
-                searchForm: { name: '', code: '', customer: '', org: '', category: '' },
+                // 新增 status 字段
+                searchForm: { name: '', code: '', customer: '', org: '', category: '', status: '' },
                 pagination: { currentPage: 1, pageSize: 10 },
                 dictionary: {
                     categories: ['商业', '工商业', '居民', '非居民', '农业', '大工业'],
+                    statuses: ['草稿', '待生效', '已生效'], // 状态列表
                     voltages: ['单一制 - 不满 1 千伏', '单一制 - 1~10 千伏', '单一制 - 35 千伏', '两部制 - 1~10 千伏', '两部制 - 35 千伏', '两部制 - 110 千伏', '两部制 - 220 千伏'],
                     customers: [
                         { value: '1', label: '新发展集团/红桂集团' },
@@ -545,7 +547,7 @@
             handleGlobalSearch() {
                 this.loading = true;
                 setTimeout(() => {
-                    const { name, code, customer, org, category } = this.searchForm;
+                    const { name, code, customer, org, category, status } = this.searchForm;
                     this.filteredData = this.allData.filter(item => {
                         if (item.isDeleted) return false; 
                         let match = true;
@@ -554,6 +556,8 @@
                         if (customer) match = match && item.customerPath.startsWith(customer);
                         if (org) match = match && (item.station.includes(org) || item.bureau.includes(org));
                         if (category) match = match && item.category === category;
+                        // 新增状态过滤
+                        if (status) match = match && item.status === status;
                         return match;
                     });
                     this.total = this.filteredData.length;
@@ -573,7 +577,7 @@
             },
 
             resetGlobalSearch() {
-                this.searchForm = { name: '', code: '', customer: '', org: '', category: '' };
+                this.searchForm = { name: '', code: '', customer: '', org: '', category: '', status: '' };
                 this.treeFilter = { customer: null, meterId: null };
                 if(this.$refs.orgTree) this.$refs.orgTree.setCurrentKey(null);
                 this.handleGlobalSearch();
