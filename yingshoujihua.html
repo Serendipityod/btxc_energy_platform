@@ -1,0 +1,1743 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>项目营收管理 - 售电合同管理系统</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#409eff',
+                        'primary-hover': '#66b1ff',
+                        success: '#67c23a',
+                        warning: '#e6a23c',
+                        danger: '#f56c6c',
+                        info: '#909399',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Custom Styles -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+        body { background-color: #f0f2f5; }
+
+        /* Custom Scrollbar */
+        .custom-scroll::-webkit-scrollbar { height: 8px; width: 8px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #f1f1f1; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+
+        /* Sticky Column Styles if needed, currently not used but good for wide tables */
+        .sticky-left { position: sticky; left: 0; z-index: 10; background-color: inherit; }
+
+        /* Loading Spinner */
+        .spinner {
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #409eff;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Table row hover effect enhancement */
+        tbody tr:hover td {
+            background-color: #f8fafc !important;
+        }
+
+        /* Input focus animation */
+        input:focus, select:focus {
+            transition: all 0.2s ease;
+            box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.1);
+        }
+
+        /* Button hover animation */
+        button {
+            transition: all 0.2s ease;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+    </style>
+
+    <!-- Import Map for React modules -->
+    <script type="importmap">
+    {
+      "imports": {
+        "lucide-react": "https://esm.sh/lucide-react@0.292.0",
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client"
+      }
+    }
+    </script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useMemo, useEffect } from 'react';
+        import ReactDOM from 'react-dom/client';
+        import { Search, Plus, Upload, Download, ChevronLeft, ChevronRight, FileText, RefreshCw } from 'lucide-react';
+
+        // --- Types & Mock Data ---
+
+        const STATUS_OPTIONS = ['待提交', '已提交', '已确认', '已退回'];
+
+        // Mock Data Generator
+        const generateData = () => {
+            const data = [];
+            const depts = ['市场开发部', '工程技术部', '综合能源部', '客户服务中心'];
+            const owners = ['广西投资集团', '南宁轨道交通', '华润水泥', '柳州钢铁'];
+            const types = ['售电服务', '节能改造', '光伏EPC', '运维服务'];
+            const managers = ['张三', '李四', '王五', '赵六'];
+            
+            for (let i = 1; i <= 20; i++) {
+                data.push({
+                    id: i,
+                    dept: depts[i % 4],
+                    code: `PRJ-2025-${String(i).padStart(3, '0')}`,
+                    name: `${owners[i % 4]}-${types[i % 4]}项目-${i}期`,
+                    owner: owners[i % 4],
+                    type: types[i % 4],
+                    manager: managers[i % 4],
+                    category: i % 2 === 0 ? '电力交易' : '综合能源',
+                    contractAmount: Math.floor(1000000 + i * 50000).toString(),
+                    taxRate: i % 3 === 0 ? '13%' : '6%',
+                    margin: (15 + i * 0.5).toFixed(2),
+
+                    // Plan fields
+                    planNewRevenue: Math.floor(50000 + i * 2000).toString(),
+
+                    // Common fields
+                    procurementProgress: `${30 + i * 2}%`,
+                    progressNote: '正常推进中',
+                    estRevenue: Math.floor(45000 + i * 2000).toString(),
+                    evidence: i % 3 === 0 ? ['acceptance_report.pdf', 'contract.pdf'].slice(0, i % 2 + 1) : [],
+
+                    // Actual fields (mocking some empty for plan stage)
+                    actualRevenue: Math.floor(45000 + i * 2000).toString(),
+                    actualMargin: (5000 + i * 200).toFixed(2),
+                    
+                    status: STATUS_OPTIONS[i % 4],
+                    approval: i % 4 === 3 ? '请补充验收单据' : '同意',
+                    confirmer: '系统管理员',
+                    confirmTime: '2025-05-20 10:00',
+                    applicant: '',
+                    note: '',
+                    isNewlyAdded: false // 初始数据不是新添加的
+                });
+            }
+            return data;
+        };
+
+        // --- Components ---
+
+        const StatusTag = ({ status }) => {
+            let colors = '';
+            switch (status) {
+                case '已确认':
+                    colors = 'bg-green-50 text-green-600 border-green-200';
+                    break;
+                case '待提交':
+                    colors = 'bg-gray-50 text-gray-500 border-gray-200';
+                    break;
+                case '已提交':
+                    colors = 'bg-blue-50 text-blue-600 border-blue-200';
+                    break;
+                case '已退回':
+                    colors = 'bg-red-50 text-red-500 border-red-200';
+                    break;
+                default:
+                    colors = 'bg-gray-50 text-gray-600 border-gray-200';
+            }
+            return (
+                <span className={`inline-flex items-center justify-center px-2 py-0.5 text-xs font-medium border rounded ${colors}`}>
+                    {status}
+                </span>
+            );
+        };
+
+        // Modal Component
+        const Modal = ({ isOpen, onClose, title, children, onConfirm }) => {
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center">
+                    <div className="fixed inset-0 bg-black/50" onClick={onClose}></div>
+                    <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-gray-800">{title}</h3>
+                            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+                                <RefreshCw size={20} />
+                            </button>
+                        </div>
+                        <div className="text-gray-600">
+                            {children}
+                        </div>
+                        {onConfirm ? (
+                            <div className="flex justify-end gap-2 mt-6">
+                                <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded hover:bg-gray-200 transition-colors">
+                                    取消
+                                </button>
+                                <button onClick={onConfirm} className="px-4 py-2 text-sm text-white bg-primary rounded hover:bg-primary-hover transition-colors">
+                                    确认
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="flex justify-end gap-2 mt-6">
+                                <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded hover:bg-gray-200 transition-colors">
+                                    取消
+                                </button>
+                                <button onClick={onClose} className="px-4 py-2 text-sm text-white bg-primary rounded hover:bg-primary-hover transition-colors">
+                                    确认
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        // Deadline Setting Modal Component
+        const DeadlineModal = ({ isOpen, onClose, onConfirm }) => {
+            const [tempDeadline, setTempDeadline] = useState('');
+
+            if (!isOpen) return null;
+
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center">
+                    <div className="fixed inset-0 bg-black/50" onClick={onClose}></div>
+                    <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-gray-800">设置填报截止时间</h3>
+                            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+                                <RefreshCw size={20} />
+                            </button>
+                        </div>
+                        <div className="mb-4">
+                            <label className="block text-sm text-gray-600 mb-2">截止时间</label>
+                            <input
+                                type="datetime-local"
+                                value={tempDeadline}
+                                onChange={(e) => setTempDeadline(e.target.value)}
+                                className="w-full h-10 px-3 text-sm border border-gray-300 rounded outline-none focus:border-primary"
+                            />
+                        </div>
+                        <div className="flex justify-end gap-2">
+                            <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded hover:bg-gray-200 transition-colors">
+                                取消
+                            </button>
+                            <button onClick={() => onConfirm(tempDeadline)} className="px-4 py-2 text-sm text-white bg-primary rounded hover:bg-primary-hover transition-colors">
+                                确认
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // Add Project Modal Component
+        const AddProjectModal = ({ isOpen, onClose, onAdd, existingData }) => {
+            const [selectedProjects, setSelectedProjects] = useState([]);
+            const [searchName, setSearchName] = useState('');
+            const [searchCode, setSearchCode] = useState('');
+            const [searchDept, setSearchDept] = useState('');
+
+            // 所有可选项目模板
+            const allProjectTemplates = [
+                { id: 1, code: 'PRJ-TEMPLATE-001', name: '广西投资集团售电服务项目', dept: '市场开发部', type: '售电服务', owner: '广西投资集团', manager: '张三', category: '电力交易', contractAmount: 1000000, taxRate: '13%', margin: 15 },
+                { id: 2, code: 'PRJ-TEMPLATE-002', name: '南宁轨道交通节能改造项目', dept: '工程技术部', type: '节能改造', owner: '南宁轨道交通', manager: '李四', category: '综合能源', contractAmount: 1500000, taxRate: '6%', margin: 18 },
+                { id: 3, code: 'PRJ-TEMPLATE-003', name: '华润水泥光伏EPC项目', dept: '综合能源部', type: '光伏EPC', owner: '华润水泥', manager: '王五', category: '综合能源', contractAmount: 2000000, taxRate: '13%', margin: 20 },
+                { id: 4, code: 'PRJ-TEMPLATE-004', name: '柳州钢铁运维服务项目', dept: '客户服务中心', type: '运维服务', owner: '柳州钢铁', manager: '赵六', category: '电力交易', contractAmount: 800000, taxRate: '6%', margin: 12 },
+                { id: 5, code: 'PRJ-TEMPLATE-005', name: '广西电网电力交易项目', dept: '市场开发部', type: '售电服务', owner: '广西电网', manager: '孙七', category: '电力交易', contractAmount: 1200000, taxRate: '13%', margin: 16 },
+                { id: 6, code: 'PRJ-TEMPLATE-006', name: '南宁地铁能源管理项目', dept: '工程技术部', type: '节能改造', owner: '南宁地铁', manager: '周八', category: '综合能源', contractAmount: 1800000, taxRate: '6%', margin: 19 },
+                { id: 7, code: 'PRJ-TEMPLATE-007', name: '玉柴光伏发电项目', dept: '综合能源部', type: '光伏EPC', owner: '玉柴集团', manager: '吴九', category: '综合能源', contractAmount: 2500000, taxRate: '13%', margin: 22 },
+                { id: 8, code: 'PRJ-TEMPLATE-008', name: '桂林钢铁厂区改造项目', dept: '客户服务中心', type: '节能改造', owner: '桂林钢铁', manager: '郑十', category: '综合能源', contractAmount: 1600000, taxRate: '6%', margin: 17 },
+            ];
+
+            // 过滤掉已存在的项目
+            const existingCodes = existingData.map(item => item.code);
+            const availableProjects = allProjectTemplates.filter(project =>
+                !existingCodes.includes(project.code)
+            );
+
+            // 搜索过滤
+            const filteredProjects = availableProjects.filter(project => {
+                return (
+                    (!searchName || project.name.toLowerCase().includes(searchName.toLowerCase())) &&
+                    (!searchCode || project.code.toLowerCase().includes(searchCode.toLowerCase())) &&
+                    (!searchDept || project.dept.toLowerCase().includes(searchDept.toLowerCase()))
+                );
+            });
+
+            const handleSelectProject = (projectId) => {
+                if (selectedProjects.includes(projectId)) {
+                    setSelectedProjects(selectedProjects.filter(id => id !== projectId));
+                } else {
+                    setSelectedProjects([...selectedProjects, projectId]);
+                }
+            };
+
+            const handleSelectAll = (e) => {
+                if (e.target.checked) {
+                    setSelectedProjects(filteredProjects.map(p => p.id));
+                } else {
+                    setSelectedProjects([]);
+                }
+            };
+
+            const handleConfirmAdd = () => {
+                const projectsToAdd = filteredProjects.filter(p => selectedProjects.includes(p.id));
+                onAdd(projectsToAdd);
+            };
+
+            if (!isOpen) return null;
+
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center">
+                    <div className="fixed inset-0 bg-black/50" onClick={onClose}></div>
+                    <div className="relative bg-white rounded-lg shadow-xl max-w-5xl w-full mx-4 p-6 max-h-[80vh] overflow-hidden flex flex-col">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-gray-800">选择新增项目（可多选）</h3>
+                            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+                                <RefreshCw size={20} />
+                            </button>
+                        </div>
+
+                        {/* 搜索栏 */}
+                        <div className="flex items-center gap-4 mb-4 pb-4 border-b border-gray-100">
+                            <div className="flex items-center">
+                                <label className="text-sm text-gray-600 mr-2">项目名称</label>
+                                <input
+                                    type="text"
+                                    placeholder="搜索项目名称"
+                                    className="w-48 h-8 px-2 text-sm border border-gray-300 rounded outline-none focus:border-primary placeholder-gray-400"
+                                    value={searchName}
+                                    onChange={e => setSearchName(e.target.value)}
+                                />
+                            </div>
+                            <div className="flex items-center">
+                                <label className="text-sm text-gray-600 mr-2">项目编号</label>
+                                <input
+                                    type="text"
+                                    placeholder="搜索项目编号"
+                                    className="w-40 h-8 px-2 text-sm border border-gray-300 rounded outline-none focus:border-primary placeholder-gray-400"
+                                    value={searchCode}
+                                    onChange={e => setSearchCode(e.target.value)}
+                                />
+                            </div>
+                            <div className="flex items-center">
+                                <label className="text-sm text-gray-600 mr-2">实施部门</label>
+                                <input
+                                    type="text"
+                                    placeholder="搜索实施部门"
+                                    className="w-40 h-8 px-2 text-sm border border-gray-300 rounded outline-none focus:border-primary placeholder-gray-400"
+                                    value={searchDept}
+                                    onChange={e => setSearchDept(e.target.value)}
+                                />
+                            </div>
+                            <div className="ml-auto text-sm text-gray-500">
+                                已选 <span className="text-primary font-semibold">{selectedProjects.length}</span> 个项目
+                            </div>
+                        </div>
+
+                        {/* 项目列表 */}
+                        <div className="flex-1 overflow-y-auto custom-scroll mb-4">
+                            {filteredProjects.length === 0 ? (
+                                <div className="text-center py-20 text-gray-400">
+                                    <div className="text-4xl opacity-30 mb-2">📋</div>
+                                    <div>没有可用的项目</div>
+                                    <div className="text-xs mt-1">所有项目模板都已被添加</div>
+                                </div>
+                            ) : (
+                                <table className="w-full text-sm">
+                                    <thead className="bg-gray-50 sticky top-0">
+                                        <tr>
+                                            <th className="px-4 py-2 w-10 text-center">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedProjects.length > 0 && selectedProjects.length === filteredProjects.length}
+                                                    onChange={handleSelectAll}
+                                                    className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                                />
+                                            </th>
+                                            <th className="px-4 py-2 text-left min-w-[200px]">项目名称</th>
+                                            <th className="px-4 py-2 text-left min-w-[140px]">项目编号</th>
+                                            <th className="px-4 py-2 text-left">实施部门</th>
+                                            <th className="px-4 py-2 text-left">项目类型</th>
+                                            <th className="px-4 py-2 text-left">业主单位</th>
+                                            <th className="px-4 py-2 text-left">项目经理</th>
+                                            <th className="px-4 py-2 text-left">业务分类</th>
+                                            <th className="px-4 py-2 text-right">含税合同金额(元)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {filteredProjects.map(project => (
+                                            <tr
+                                                key={project.id}
+                                                className={`hover:bg-gray-50 ${selectedProjects.includes(project.id) ? 'bg-blue-50' : ''}`}
+                                            >
+                                                <td className="px-4 py-2 text-center">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedProjects.includes(project.id)}
+                                                        onChange={() => handleSelectProject(project.id)}
+                                                        className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                                    />
+                                                </td>
+                                                <td className="px-4 py-2 text-gray-800">{project.name}</td>
+                                                <td className="px-4 py-2 text-gray-600 font-mono text-xs">{project.code}</td>
+                                                <td className="px-4 py-2">{project.dept}</td>
+                                                <td className="px-4 py-2">{project.type}</td>
+                                                <td className="px-4 py-2">{project.owner}</td>
+                                                <td className="px-4 py-2">{project.manager}</td>
+                                                <td className="px-4 py-2">{project.category}</td>
+                                                <td className="px-4 py-2 text-right font-mono">{Number(project.contractAmount).toLocaleString()}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+
+                        {/* 底部按钮 */}
+                        <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
+                            <button
+                                onClick={onClose}
+                                className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded hover:bg-gray-200 transition-colors"
+                            >
+                                取消
+                            </button>
+                            <button
+                                onClick={handleConfirmAdd}
+                                disabled={selectedProjects.length === 0}
+                                className="px-4 py-2 text-sm text-white bg-primary rounded hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                确认添加 ({selectedProjects.length})
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // 审批处理弹窗组件
+            const ApprovalModal = ({ isOpen, onClose, item, onApprove, onReject }) => {
+                const [actualRevenue, setActualRevenue] = useState(item?.actualRevenue || '');
+                const [actualMargin, setActualMargin] = useState(item?.actualMargin || '');
+                const [approvalNote, setApprovalNote] = useState('');
+                const [selectedFiles, setSelectedFiles] = useState(item?.evidence || []);
+
+                if (!isOpen || !item) return null;
+
+                return (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center">
+                        <div className="fixed inset-0 bg-black/50" onClick={onClose}></div>
+                        <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="text-lg font-semibold text-gray-800">营收审批处理</h3>
+                                <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+                                    <RefreshCw size={20} />
+                                </button>
+                            </div>
+                            
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                    <div>
+                                        <label className="block text-gray-600 mb-1">项目名称</label>
+                                        <div className="text-gray-800 font-medium">{item.name}</div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-gray-600 mb-1">提交人</label>
+                                        <div className="text-gray-800">{item.confirmer || '胡敏'}</div>
+                                    </div>
+                                </div>
+                                
+                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                    <div>
+                                        <label className="block text-gray-600 mb-1">计划确认营收（元）</label>
+                                        <div className="text-gray-800 font-mono">{formatNumber(item.planNewRevenue)}</div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-gray-600 mb-1">拟申请确认营收（元）</label>
+                                        <div className="text-gray-800 font-mono">{formatNumber(item.estRevenue)}</div>
+                                    </div>
+                                </div>
+                                
+                                <div className="text-sm">
+                                    <label className="block text-gray-600 mb-1">证明材料</label>
+                                    <div className="space-y-1">
+                                        {selectedFiles.length > 0 ? (
+                                            selectedFiles.map((file, index) => (
+                                                <div key={index} className="text-blue-600 hover:underline cursor-pointer">
+                                                    {file}
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <span className="text-gray-400 text-xs">暂无材料</span>
+                                        )}
+                                    </div>
+                                </div>
+                                
+                                <div className="text-sm">
+                                    <label className="block text-gray-600 mb-1">*实际确认营收（元）</label>
+                                    <input
+                                        type="text"
+                                        value={actualRevenue}
+                                        onChange={(e) => setActualRevenue(e.target.value)}
+                                        className="w-full h-8 px-2 text-sm border border-gray-300 rounded outline-none focus:border-primary"
+                                        placeholder="请输入金额"
+                                    />
+                                </div>
+                                
+                                <div className="text-sm">
+                                    <label className="block text-gray-600 mb-1">实际确认毛利（元）</label>
+                                    <input
+                                        type="text"
+                                        value={actualMargin}
+                                        onChange={(e) => setActualMargin(e.target.value)}
+                                        className="w-full h-8 px-2 text-sm border border-gray-300 rounded outline-none focus:border-primary"
+                                        placeholder="请输入金额"
+                                    />
+                                </div>
+                                
+                                <div className="text-sm">
+                                    <label className="block text-gray-600 mb-1">审批意见</label>
+                                    <textarea
+                                        value={approvalNote}
+                                        onChange={(e) => setApprovalNote(e.target.value)}
+                                        className="w-full h-20 px-2 text-sm border border-gray-300 rounded outline-none focus:border-primary resize-none"
+                                        placeholder="请输入审批意见"
+                                    />
+                                </div>
+                            </div>
+                            
+                            <div className="flex justify-end gap-2 mt-6">
+                                <button
+                                    onClick={onClose}
+                                    className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded hover:bg-gray-200 transition-colors"
+                                >
+                                    返回
+                                </button>
+                                <button
+                                    onClick={() => onApprove(item.id, actualRevenue, actualMargin, approvalNote)}
+                                    className="px-4 py-2 text-sm text-white bg-primary rounded hover:bg-primary-hover transition-colors"
+                                >
+                                    确认
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+        // --- Main App Component ---
+
+        const App = () => {
+            const [activeTab, setActiveTab] = useState('plan'); // 'plan' or 'actual'
+            const [data, setData] = useState([]);
+            const [planData, setPlanData] = useState([]); // 计划营收数据
+            const [filters, setFilters] = useState({
+                name: '',
+                code: '',
+                manager: '',
+                dept: '',
+                revenueType: 'plan', // 'plan', 'actual', 'confirmed'
+                revenueMin: '',
+                revenueMax: ''
+            });
+            const [pagination, setPagination] = useState({ current: 1, size: 10 });
+            const [loading, setLoading] = useState(true);
+            const [saving, setSaving] = useState(false);
+            const [modalOpen, setModalOpen] = useState(false);
+            const [modalContent, setModalContent] = useState('');
+            const [addModalOpen, setAddModalOpen] = useState(false);
+            const [selectedRows, setSelectedRows] = useState([]);
+            const [countdown, setCountdown] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+            const [deadline, setDeadline] = useState(new Date('2025-12-31T23:59:59')); // 填报截止时间
+            const [isEditing, setIsEditing] = useState(false); // 全局编辑状态
+            const [editingData, setEditingData] = useState([]); // 编辑时的临时数据
+            const [draggedIndex, setDraggedIndex] = useState(null); // 拖拽的索引
+            const [isFinancialUser, setIsFinancialUser] = useState(false); // 是否为财务人员
+            const [approvalModalOpen, setApprovalModalOpen] = useState(false); // 审批弹窗
+            const [selectedApprovalItem, setSelectedApprovalItem] = useState(null); // 选中的审批项目
+
+            // 管理功能状态
+            const [isFillingOpen, setIsFillingOpen] = useState(false); // 是否开启填报
+            const [hasOpenedBefore, setHasOpenedBefore] = useState(false); // 是否曾经开启过填报
+            const [deadlineModalOpen, setDeadlineModalOpen] = useState(false); // 截止时间设置弹窗
+            const [newDeadline, setNewDeadline] = useState(''); // 新的截止时间
+
+            // 年月选择
+            const currentYear = new Date().getFullYear();
+            const currentMonth = new Date().getMonth() + 1;
+            const [selectedYear, setSelectedYear] = useState(currentYear);
+            const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+
+            // 获取当月填报截止日期（假设每月25日为截止日）
+            const getMonthDeadline = (year, month) => {
+                return new Date(year, month, 25, 23, 59, 59);
+            };
+
+            // 开启填报
+            const handleOpenFilling = () => {
+                setDeadlineModalOpen(true);
+            };
+
+            // 关闭填报
+            const handleCloseFilling = () => {
+                if (confirm('确定要关闭填报吗？关闭后将禁止编辑、新增和删除操作，当前时间将作为截止时间。')) {
+                    setDeadline(new Date());
+                    setIsFillingOpen(false);
+                    // 如果正在编辑模式，退出编辑模式
+                    if (isEditing) {
+                        setIsEditing(false);
+                        setEditingData([]);
+                    }
+                    setModalContent('填报已关闭！');
+                    setModalOpen(true);
+                }
+            };
+
+            // 确认设置截止时间
+            const handleConfirmDeadline = () => {
+                const deadlineDate = new Date(newDeadline);
+                if (isNaN(deadlineDate.getTime())) {
+                    setModalContent('请输入有效的截止时间！');
+                    setModalOpen(true);
+                    return;
+                }
+                setDeadline(deadlineDate);
+                setIsFillingOpen(true);
+                setHasOpenedBefore(true);
+                setDeadlineModalOpen(false);
+                setModalContent('填报已开启！');
+                setModalOpen(true);
+            };
+
+            useEffect(() => {
+                // Simulate API load
+                setTimeout(() => {
+                    const initialData = generateData();
+                    setData(initialData);
+                    setPlanData(initialData);
+                    setLoading(false);
+                }, 500);
+            }, []);
+
+            // Countdown timer
+            useEffect(() => {
+                const timer = setInterval(() => {
+                    const now = new Date();
+                    const currentMonthDeadline = getMonthDeadline(selectedYear, selectedMonth);
+                    const diff = currentMonthDeadline - now;
+
+                    if (diff > 0) {
+                        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+                        const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+                        setCountdown({ days, hours, minutes, seconds });
+                    } else {
+                        setCountdown({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+                    }
+                }, 1000);
+
+                return () => clearInterval(timer);
+            }, [selectedYear, selectedMonth]);
+
+            // Filtering
+            const filteredData = useMemo(() => {
+                return data.filter(item => {
+                    let revenueFilter = true;
+                    if (filters.revenueType && (filters.revenueMin || filters.revenueMax)) {
+                        const revenueValue = Number(filters.revenueType === 'plan' ? item.planNewRevenue
+                            : filters.revenueType === 'actual' ? item.actualRevenue
+                            : item.actualRevenue);
+                        const min = filters.revenueMin ? Number(filters.revenueMin) : 0;
+                        const max = filters.revenueMax ? Number(filters.revenueMax) : Infinity;
+                        revenueFilter = revenueValue >= min && revenueValue <= max;
+                    }
+
+                    return (
+                        (!filters.name || item.name.toLowerCase().includes(filters.name.toLowerCase())) &&
+                        (!filters.code || item.code.toLowerCase().includes(filters.code.toLowerCase())) &&
+                        (!filters.manager || item.manager.includes(filters.manager)) &&
+                        (!filters.dept || item.dept.includes(filters.dept)) &&
+                        revenueFilter
+                    );
+                });
+            }, [data, filters]);
+
+            // Pagination
+            const totalItems = filteredData.length;
+            const totalPages = Math.ceil(totalItems / pagination.size);
+            const paginatedData = useMemo(() => {
+                const start = (pagination.current - 1) * pagination.size;
+                return filteredData.slice(start, start + pagination.size);
+            }, [filteredData, pagination]);
+
+            // Handlers
+            const handleSearch = () => {
+                setPagination(p => ({ ...p, current: 1 }));
+            };
+
+            const handleReset = () => {
+                setFilters({ name: '', code: '', manager: '', dept: '', revenueType: 'plan', revenueMin: '', revenueMax: '' });
+                setPagination(p => ({ ...p, current: 1 }));
+            };
+
+            // 切换到实际营收标签时自动同步计划数据
+            useEffect(() => {
+                if (activeTab === 'actual' && planData.length > 0) {
+                    setSaving(true);
+                    setTimeout(() => {
+                        setData(planData);
+                        setSaving(false);
+                    }, 300);
+                }
+            }, [activeTab]);
+
+            // 进入编辑模式
+            const handleEdit = () => {
+                if (!isFillingOpen) {
+                    if (hasOpenedBefore) {
+                        setModalContent('当前填报已截止，请联系管理员开启后再填写');
+                    } else {
+                        setModalContent('填报尚未开始，请联系管理员开启后再填写');
+                    }
+                    setModalOpen(true);
+                    return;
+                }
+                setEditingData(JSON.parse(JSON.stringify(filteredData)));
+                setIsEditing(true);
+            };
+
+            // 保存编辑
+            const handleSave = () => {
+                setSaving(true);
+                setTimeout(() => {
+                    // 在实际营收标签保存时，记录申请人
+                    const updatedData = editingData.map(item => {
+                        if (activeTab === 'actual') {
+                            return {
+                                ...item,
+                                applicant: '当前用户' // 这里应该是实际的用户名，暂时用'当前用户'代替
+                            };
+                        }
+                        return item;
+                    });
+                    setData(updatedData);
+                    // 如果在计划营收标签保存，同步更新计划数据
+                    if (activeTab === 'plan') {
+                        setPlanData(updatedData);
+                    }
+                    setSaving(false);
+                    setIsEditing(false);
+                    setModalContent('保存成功！');
+                    setModalOpen(true);
+                }, 800);
+            };
+
+            // 取消编辑
+            const handleCancelEdit = () => {
+                setIsEditing(false);
+                setEditingData([]);
+            };
+
+            // 更新编辑数据
+            const handleEditChange = (id, field, value) => {
+                setEditingData(prev => prev.map(item =>
+                    item.id === id ? { ...item, [field]: value } : item
+                ));
+            };
+
+            // 拖拽处理函数
+            const handleDragStart = (e, index) => {
+                setDraggedIndex(index);
+                e.dataTransfer.effectAllowed = 'move';
+            };
+
+            const handleDragOver = (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+            };
+
+            const handleDrop = (e, dropIndex) => {
+                e.preventDefault();
+                if (draggedIndex === null || draggedIndex === dropIndex) return;
+
+                const targetData = isEditing ? editingData : filteredData;
+                const newData = [...targetData];
+                const [draggedItem] = newData.splice(draggedIndex, 1);
+                newData.splice(dropIndex, 0, draggedItem);
+
+                if (isEditing) {
+                    setEditingData(newData);
+                } else {
+                    // 对于查看模式，我们需要在原始数据中更新顺序
+                    const currentData = activeTab === 'plan' ? data : data;
+                    const newOrderedData = [];
+                    newData.forEach(item => {
+                        const originalItem = currentData.find(d => d.id === item.id);
+                        if (originalItem) newOrderedData.push(originalItem);
+                    });
+                    setData(newOrderedData);
+                }
+
+                setDraggedIndex(null);
+            };
+
+            const handleDragEnd = () => {
+                setDraggedIndex(null);
+            };
+
+            // 上传证明材料
+            const handleUploadEvidence = (id) => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.multiple = true;
+                input.accept = '.pdf,.doc,.docx,.txt,.rtf,.jpg,.jpeg,.png';
+                input.onchange = (e) => {
+                    const files = Array.from(e.target.files);
+                    if (files.length === 0) return;
+
+                    setEditingData(prev => prev.map(item => {
+                        if (item.id === id) {
+                            const currentFiles = Array.isArray(item.evidence) ? item.evidence : (item.evidence ? [item.evidence] : []);
+                            const totalFiles = currentFiles.length + files.length;
+                            if (totalFiles > 10) {
+                                setModalContent(`最多只能上传10个文件！当前已有${currentFiles.length}个，尝试上传${files.length}个`);
+                                setModalOpen(true);
+                                return item;
+                            }
+                            const newFileNames = files.map(file => file.name);
+                            return { ...item, evidence: [...currentFiles, ...newFileNames] };
+                        }
+                        return item;
+                    }));
+                };
+                input.click();
+            };
+
+            // 查看证明材料
+            const handleViewEvidence = (evidence) => {
+                const modalContent = (
+                    <div className="text-center">
+                        <div className="text-4xl mb-4">📄</div>
+                        <p className="text-gray-700 mb-2">文件名：{evidence}</p>
+                        <p className="text-gray-500 text-sm">这是预览功能的模拟展示</p>
+                        <p className="text-gray-400 text-xs mt-2">实际使用时可以集成PDF.js或其他预览组件</p>
+                    </div>
+                );
+                setModalContent(modalContent);
+                setModalOpen(true);
+            };
+
+            // 下载证明材料
+            const handleDownloadEvidence = (evidence) => {
+                const link = document.createElement('a');
+                link.href = '#';
+                link.download = evidence;
+                link.click();
+                setModalContent(`文件 ${evidence} 已开始下载`);
+                setModalOpen(true);
+            };
+
+            // 删除证明材料
+            const handleDeleteEvidence = (id, index) => {
+                if (confirm('确定要删除这个证明材料吗？')) {
+                    setEditingData(prev => prev.map(item => {
+                        if (item.id === id && Array.isArray(item.evidence)) {
+                            const newEvidence = item.evidence.filter((_, idx) => idx !== index);
+                            return { ...item, evidence: newEvidence };
+                        }
+                        return item;
+                    }));
+                    setModalContent('证明材料已删除');
+                    setModalOpen(true);
+                }
+            };
+
+            // 审批处理
+            const handleApproveItem = (id, actualRevenue, actualMargin, note) => {
+                // 更新数据
+                setEditingData(prev => prev.map(item =>
+                    item.id === id 
+                        ? { 
+                            ...item, 
+                            actualRevenue: actualRevenue || item.actualRevenue, 
+                            actualMargin: actualMargin || item.actualMargin,
+                            status: '已确认',
+                            approval: note || '同意',
+                            confirmer: '当前用户',
+                            confirmTime: new Date().toLocaleString()
+                        }
+                        : item
+                ));
+                
+                // 关闭弹窗
+                setApprovalModalOpen(false);
+                setSelectedApprovalItem(null);
+                
+                // 显示成功提示
+                setModalContent('审批确认成功！');
+                setModalOpen(true);
+            };
+
+            const handleRejectItem = (id, note) => {
+                // 更新数据
+                setEditingData(prev => prev.map(item =>
+                    item.id === id 
+                        ? { 
+                            ...item, 
+                            status: '已退回',
+                            approval: note || '请补充材料',
+                            confirmer: '当前用户',
+                            confirmTime: new Date().toLocaleString()
+                        }
+                        : item
+                ));
+                
+                // 关闭弹窗
+                setApprovalModalOpen(false);
+                setSelectedApprovalItem(null);
+                
+                // 显示成功提示
+                setModalContent('审批退回成功！');
+                setModalOpen(true);
+            };
+
+            const handleOpenApproval = (item) => {
+                if (!isFillingOpen && hasOpenedBefore) {
+                    setModalContent('当前填报已截止，无法进行审批操作');
+                    setModalOpen(true);
+                    return;
+                }
+                setSelectedApprovalItem(item);
+                setApprovalModalOpen(true);
+            };
+
+            const handleExport = () => {
+                setSaving(true);
+                setTimeout(() => {
+                    setSaving(false);
+                    setModalContent('导出成功！文件已下载。');
+                    setModalOpen(true);
+                }, 800);
+            };
+
+            const handleDelete = (id) => {
+                if (confirm('确定要删除这条记录吗？')) {
+                    const newData = data.filter(item => item.id !== id);
+                    setData(newData);
+                    // 同步删除计划数据中的记录
+                    setPlanData(newData);
+                    setModalContent('删除成功！');
+                    setModalOpen(true);
+                }
+            };
+
+            const handleBatchDelete = () => {
+                if (selectedRows.length === 0) {
+                    setModalContent('请先选择要删除的记录！');
+                    setModalOpen(true);
+                    return;
+                }
+                if (confirm(`确定要删除选中的 ${selectedRows.length} 条记录吗？`)) {
+                    const newData = data.filter(item => !selectedRows.includes(item.id));
+                    setData(newData);
+                    // 同步删除计划数据中的记录
+                    setPlanData(newData);
+                    setSelectedRows([]);
+                    setModalContent('批量删除成功！');
+                    setModalOpen(true);
+                }
+            };
+
+            const handleSelectAll = (e) => {
+                if (e.target.checked) {
+                    setSelectedRows(paginatedData.map(item => item.id));
+                } else {
+                    setSelectedRows([]);
+                }
+            };
+
+            // Format number with thousand separator
+            const formatNumber = (value) => {
+                if (!value) return '';
+                const num = Number(value);
+                return isNaN(num) ? value : num.toLocaleString();
+            };
+
+            const handleSelectRow = (id) => {
+                if (selectedRows.includes(id)) {
+                    setSelectedRows(selectedRows.filter(rowId => rowId !== id));
+                } else {
+                    setSelectedRows([...selectedRows, id]);
+                }
+            };
+
+            const handleAddProjects = (selectedProjects) => {
+                if (selectedProjects.length === 0) {
+                    setModalContent('请至少选择一个项目！');
+                    setModalOpen(true);
+                    return;
+                }
+
+                let maxId = data.length > 0 ? Math.max(...data.map(d => d.id)) : 0;
+                const newProjects = selectedProjects.map(project => {
+                    maxId += 1;
+                    return {
+                        ...project,
+                        id: maxId,
+                        code: `PRJ-2025-${String(maxId).padStart(3, '0')}`,
+                        planNewRevenue: '0',
+                        contractAmount: project.contractAmount.toString(),
+                        procurementProgress: '0%',
+                        progressNote: '',
+                        estRevenue: '',
+                        actualRevenue: '0',
+                        actualMargin: '0',
+                        status: '待提交',
+                        approval: '',
+                        confirmer: '',
+                        confirmTime: '',
+                        note: '',
+                        evidence: '',
+                        isNewlyAdded: true // 标记为新添加的项目
+                    };
+                });
+
+                setData([...data, ...newProjects]);
+                setAddModalOpen(false);
+                setModalContent(`成功添加 ${selectedProjects.length} 个项目！`);
+                setModalOpen(true);
+            };
+
+            const renderTableHeaders = () => (
+                <tr className="text-xs font-semibold text-gray-700 bg-[#f5f7fa] border-b border-gray-200 whitespace-nowrap">
+                    <th className="px-4 py-3 w-10 text-center fixed-left bg-[#f5f7fa]">
+                        <input
+                            type="checkbox"
+                            checked={selectedRows.length > 0 && selectedRows.length === paginatedData.length}
+                            onChange={handleSelectAll}
+                            className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                        />
+                    </th>
+                    <th className="px-4 py-3 w-10 text-center fixed-left bg-[#f5f7fa]">序号</th>
+                    <th className="px-4 py-3 min-w-[100px] text-left">实施部门</th>
+                    <th className="px-4 py-3 min-w-[140px] text-left">项目编号</th>
+                    <th className="px-4 py-3 min-w-[200px] text-left">项目名称</th>
+
+                    {/* Plan Specific Columns - moved after project name */}
+                    {activeTab === 'plan' && (
+                        <th className="px-4 py-3 min-w-[120px] text-right bg-blue-50/50 text-primary border-b-primary/20">计划新增营收(元)</th>
+                    )}
+
+                    <th className="px-4 py-3 min-w-[100px] text-left">项目采购进度</th>
+                    <th className="px-4 py-3 min-w-[150px] text-left">采购进度说明</th>
+                    <th className="px-4 py-3 min-w-[150px] text-left">备注</th>
+
+                    <th className="px-4 py-3 min-w-[150px] text-left">业主单位</th>
+                    <th className="px-4 py-3 min-w-[100px] text-left">项目类型</th>
+                    <th className="px-4 py-3 min-w-[100px] text-left">业务分类</th>
+                    <th className="px-4 py-3 min-w-[80px] text-left">项目经理</th>
+                    <th className="px-4 py-3 min-w-[120px] text-right">含税合同金额(元)</th>
+                    <th className="px-4 py-3 min-w-[80px] text-left">税率</th>
+                    <th className="px-4 py-3 min-w-[100px] text-right">策划毛利率(%)</th>
+
+                    {/* These columns only show for actual tab */}
+                    {activeTab === 'actual' && (
+                        <th className="px-4 py-3 min-w-[120px] text-right bg-blue-50/50 text-primary border-b-primary/20">计划新增营收(元)</th>
+                    )}
+
+                    {activeTab === 'actual' && (
+                        <th className="px-4 py-3 min-w-[140px] text-right bg-blue-50/50 text-primary border-b-primary/20">预计申请确认营收(元)</th>
+                    )}
+
+                    {activeTab === 'actual' && (
+                        <th className="px-4 py-3 min-w-[100px] text-center">证明材料</th>
+                    )}
+
+                    {activeTab === 'actual' && (
+                        <>
+                            <th className="px-4 py-3 min-w-[140px] text-right bg-green-50/50 text-success border-b-success/20">实际确认营收(元)</th>
+                            <th className="px-4 py-3 min-w-[140px] text-right bg-green-50/50 text-success border-b-success/20">实际确认毛利(元)</th>
+                        </>
+                    )}
+
+                    {activeTab === 'actual' && (
+                        <th className="px-4 py-3 min-w-[100px] text-center">申请人</th>
+                    )}
+
+                    {activeTab === 'actual' && (
+                        <th className="px-4 py-3 min-w-[100px] text-center">状态</th>
+                    )}
+
+                    {activeTab === 'actual' && (
+                        <th className="px-4 py-3 min-w-[150px]">审批意见</th>
+                    )}
+
+                    {activeTab === 'actual' && (
+                        <th className="px-4 py-3 min-w-[80px]">确认人</th>
+                    )}
+
+                    {activeTab === 'actual' && (
+                        <th className="px-4 py-3 min-w-[140px]">确认时间</th>
+                    )}
+                    <th className="px-4 py-3 min-w-[80px] text-center sticky right-0 bg-[#f5f7fa] shadow-sm">操作</th>
+                </tr>
+            );
+
+            const inputStyle = "w-full text-xs px-2 py-1 border border-gray-300 rounded focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors";
+
+            return (
+                <div className="min-h-screen p-5 font-sans text-gray-800">
+                    <div className="bg-white rounded shadow-sm min-h-[85vh] flex flex-col">
+                        
+                        {/* 1. Header & Tabs */}
+                        <div className="flex items-center justify-between px-6 border-b border-gray-100">
+                            <div className="flex pt-4">
+                                <button
+                                    onClick={() => setActiveTab('plan')}
+                                    className={`mr-8 pb-3 text-sm font-medium transition-colors border-b-2 ${
+                                        activeTab === 'plan'
+                                            ? 'border-primary text-primary'
+                                            : 'border-transparent text-gray-600 hover:text-primary'
+                                    }`}
+                                >
+                                    计划营收
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('actual')}
+                                    className={`mr-8 pb-3 text-sm font-medium transition-colors border-b-2 ${
+                                        activeTab === 'actual'
+                                            ? 'border-primary text-primary'
+                                            : 'border-transparent text-gray-600 hover:text-primary'
+                                    }`}
+                                >
+                                    实际营收
+                                </button>
+                            </div>
+                            <div className="flex items-center gap-2 pt-4">
+                                <span className="text-sm text-gray-600">填报月份：</span>
+                                <select
+                                    value={selectedYear}
+                                    onChange={(e) => setSelectedYear(Number(e.target.value))}
+                                    className="h-8 px-2 text-sm border border-gray-300 rounded outline-none focus:border-primary bg-white"
+                                >
+                                    {Array.from({ length: 5 }, (_, i) => currentYear - 2 + i).map(year => (
+                                        <option key={year} value={year}>{year}年</option>
+                                    ))}
+                                </select>
+                                <select
+                                    value={selectedMonth}
+                                    onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                                    className="h-8 px-2 text-sm border border-gray-300 rounded outline-none focus:border-primary bg-white"
+                                >
+                                    {Array.from({ length: 12 }, (_, i) => i + 1).map(month => (
+                                        <option key={month} value={month}>{month}月</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+
+                        {/* 2. Deadline Display */}
+                        <div className="px-5 py-3 border-b border-gray-100 bg-orange-50/50">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 text-sm">
+                                    <span className="text-gray-600">{selectedYear}年{selectedMonth}月填报截止时间：</span>
+                                    <span
+                                        className={`font-semibold ${isFillingOpen ? 'cursor-pointer hover:underline text-green-600' : 'text-gray-600'}`}
+                                        onClick={() => isFillingOpen && setDeadlineModalOpen(true)}
+                                        title={isFillingOpen ? '点击修改截止时间' : hasOpenedBefore ? '填报已关闭' : '填报尚未开始'}
+                                    >
+                                        {deadline.toLocaleDateString('zh-CN')}
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-4 text-sm">
+                                    {isFillingOpen ? (
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-gray-600">倒计时：</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="inline-flex items-center justify-center w-10 h-8 bg-green-100 text-green-600 rounded font-semibold">
+                                                    {String(countdown.days).padStart(2, '0')}
+                                                </span>
+                                                <span className="text-gray-500">天</span>
+                                                <span className="inline-flex items-center justify-center w-10 h-8 bg-green-100 text-green-600 rounded font-semibold">
+                                                    {String(countdown.hours).padStart(2, '0')}
+                                                </span>
+                                                <span className="text-gray-500">时</span>
+                                                <span className="inline-flex items-center justify-center w-10 h-8 bg-green-100 text-green-600 rounded font-semibold">
+                                                    {String(countdown.minutes).padStart(2, '0')}
+                                                </span>
+                                                <span className="text-gray-500">分</span>
+                                                <span className="inline-flex items-center justify-center w-10 h-8 bg-green-100 text-green-600 rounded font-semibold">
+                                                    {String(countdown.seconds).padStart(2, '0')}
+                                                </span>
+                                                <span className="text-gray-500">秒</span>
+                                            </div>
+                                        </div>
+                                    ) : hasOpenedBefore ? (
+                                        <span className="text-red-600 font-semibold">填报已关闭</span>
+                                    ) : (
+                                        <span className="text-orange-600 font-semibold">填报尚未开始</span>
+                                    )}
+                                    <button
+                                        onClick={isFillingOpen ? handleCloseFilling : handleOpenFilling}
+                                        className={`px-4 py-1.5 text-sm rounded transition-colors ${
+                                            isFillingOpen
+                                                ? 'bg-red-500 text-white hover:bg-red-600'
+                                                : 'bg-success text-white hover:bg-green-600'
+                                        }`}
+                                    >
+                                        {isFillingOpen ? '关闭填报' : '开启填报'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 3. Filter Bar */}
+                        <div className="p-5 border-b border-gray-100 bg-gray-50/30">
+                            <div className="flex flex-wrap items-center gap-4">
+                                <div className="flex items-center">
+                                    <label className="text-sm text-gray-600 mr-2">项目名称</label>
+                                    <input 
+                                        type="text" 
+                                        placeholder="模糊搜索" 
+                                        className="w-40 h-8 px-2 text-sm border border-gray-300 rounded outline-none focus:border-primary placeholder-gray-400"
+                                        value={filters.name}
+                                        onChange={e => setFilters({...filters, name: e.target.value})}
+                                    />
+                                </div>
+                                <div className="flex items-center">
+                                    <label className="text-sm text-gray-600 mr-2">项目编号</label>
+                                    <input 
+                                        type="text" 
+                                        placeholder="请输入" 
+                                        className="w-32 h-8 px-2 text-sm border border-gray-300 rounded outline-none focus:border-primary placeholder-gray-400"
+                                        value={filters.code}
+                                        onChange={e => setFilters({...filters, code: e.target.value})}
+                                    />
+                                </div>
+                                <div className="flex items-center">
+                                    <label className="text-sm text-gray-600 mr-2">项目经理</label>
+                                    <input
+                                        type="text"
+                                        placeholder="请输入"
+                                        className="w-32 h-8 px-2 text-sm border border-gray-300 rounded outline-none focus:border-primary placeholder-gray-400"
+                                        value={filters.manager}
+                                        onChange={e => setFilters({...filters, manager: e.target.value})}
+                                    />
+                                </div>
+                                <div className="flex items-center">
+                                    <label className="text-sm text-gray-600 mr-2">实施部门</label>
+                                    <input
+                                        type="text"
+                                        placeholder="请输入"
+                                        className="w-32 h-8 px-2 text-sm border border-gray-300 rounded outline-none focus:border-primary placeholder-gray-400"
+                                        value={filters.dept}
+                                        onChange={e => setFilters({...filters, dept: e.target.value})}
+                                    />
+                                </div>
+                                <div className="flex items-center">
+                                    <label className="text-sm text-gray-600 mr-2">营收金额</label>
+                                    <select
+                                        className="w-28 h-8 px-2 text-sm border border-gray-300 rounded outline-none focus:border-primary bg-white"
+                                        value={filters.revenueType}
+                                        onChange={e => setFilters({...filters, revenueType: e.target.value})}
+                                    >
+                                        <option value="plan">计划营收</option>
+                                        <option value="actual">实际营收</option>
+                                        <option value="confirmed">确认营收</option>
+                                    </select>
+                                    <input
+                                        type="number"
+                                        placeholder="最小值"
+                                        className="w-24 h-8 px-2 text-sm border border-gray-300 rounded outline-none focus:border-primary placeholder-gray-400 ml-2"
+                                        value={filters.revenueMin}
+                                        onChange={e => setFilters({...filters, revenueMin: e.target.value})}
+                                    />
+                                    <span className="text-gray-400 mx-1">-</span>
+                                    <input
+                                        type="number"
+                                        placeholder="最大值"
+                                        className="w-24 h-8 px-2 text-sm border border-gray-300 rounded outline-none focus:border-primary placeholder-gray-400"
+                                        value={filters.revenueMax}
+                                        onChange={e => setFilters({...filters, revenueMax: e.target.value})}
+                                    />
+                                </div>
+                                <div className="flex items-center gap-2 ml-auto">
+                                    <button onClick={handleSearch} className="px-4 py-1.5 bg-primary text-white text-sm rounded hover:bg-primary-hover transition-colors shadow-sm flex items-center">
+                                        <Search size={14} className="mr-1"/> 查询
+                                    </button>
+                                    <button onClick={handleReset} className="px-4 py-1.5 bg-white border border-gray-300 text-gray-600 text-sm rounded hover:border-primary hover:text-primary transition-colors flex items-center">
+                                        <RefreshCw size={14} className="mr-1"/> 重置
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 4. Action Bar */}
+                        <div className="px-5 py-3 flex gap-3 border-b border-gray-100">
+                            {!isEditing ? (
+                                <>
+                                    <button
+                                        onClick={handleEdit}
+                                        disabled={saving || !isFillingOpen}
+                                        className="flex items-center px-4 py-1.5 bg-primary text-white text-sm rounded hover:bg-primary-hover shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title={!isFillingOpen ? (hasOpenedBefore ? '当前填报已截止，请联系管理员开启后再填写' : '填报尚未开始，请联系管理员开启后再填写') : ''}
+                                    >
+                                        编辑
+                                    </button>
+                                    <button
+                                        onClick={() => setAddModalOpen(true)}
+                                        disabled={!isFillingOpen}
+                                        className="flex items-center px-4 py-1.5 bg-white border border-gray-300 text-gray-600 text-sm rounded hover:border-primary hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title={!isFillingOpen ? (hasOpenedBefore ? '当前填报已截止，请联系管理员开启后再填写' : '填报尚未开始，请联系管理员开启后再填写') : ''}
+                                    >
+                                        <Plus size={14} className="mr-1"/> 新增项目
+                                    </button>
+                                    <button
+                                        onClick={handleBatchDelete}
+                                        disabled={selectedRows.length === 0 || saving || !isFillingOpen}
+                                        className="flex items-center px-4 py-1.5 bg-white border border-gray-300 text-red-500 text-sm rounded hover:border-red-500 hover:text-red-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title={!isFillingOpen ? (hasOpenedBefore ? '当前填报已截止，请联系管理员开启后再填写' : '填报尚未开始，请联系管理员开启后再填写') : ''}
+                                    >
+                                        删除 ({selectedRows.length})
+                                    </button>
+                                    <button onClick={handleExport} disabled={saving} className="flex items-center px-4 py-1.5 bg-white border border-gray-300 text-gray-600 text-sm rounded hover:border-primary hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                        <Download size={14} className="mr-1"/> 导出列表
+                                    </button>
+                                </>
+                            ) : (
+                                <>
+                                    <button onClick={handleSave} disabled={saving} className="flex items-center px-4 py-1.5 bg-success text-white text-sm rounded hover:bg-green-600 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                        {saving ? '保存中...' : '保存'}
+                                    </button>
+                                    <button onClick={handleCancelEdit} className="flex items-center px-4 py-1.5 bg-white border border-gray-300 text-gray-600 text-sm rounded hover:border-gray-400 transition-colors">
+                                        取消
+                                    </button>
+                                </>
+                            )}
+                            <div className="ml-auto flex items-center text-sm text-gray-500">
+                                <span className="mr-4">总计划营收: <span className="text-primary font-semibold">¥{data.reduce((sum, item) => sum + Number(item.planNewRevenue), 0).toLocaleString()}</span></span>
+                                {activeTab === 'actual' && (
+                                    <span>总实际营收: <span className="text-success font-semibold">¥{data.reduce((sum, item) => sum + Number(item.actualRevenue), 0).toLocaleString()}</span></span>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* 4. Table */}
+                        <div className="flex-1 overflow-x-auto custom-scroll relative">
+                            <table className="w-full text-sm text-left border-collapse">
+                                <thead>
+                                    {renderTableHeaders()}
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {loading ? (
+                                        <tr><td colSpan={activeTab === 'plan' ? 14 : 22} className="text-center py-20 text-gray-400">
+                                            <div className="flex flex-col items-center gap-3">
+                                                <div className="spinner"></div>
+                                                <span>加载中...</span>
+                                            </div>
+                                        </td></tr>
+                                    ) : paginatedData.length === 0 ? (
+                                        <tr><td colSpan={activeTab === 'plan' ? 14 : 22} className="text-center py-20 text-gray-400">
+                                            <div className="flex flex-col items-center gap-3">
+                                                <div className="text-4xl opacity-30">📋</div>
+                                                <span>暂无数据</span>
+                                            </div>
+                                        </td></tr>
+                                    ) : (
+                                        paginatedData.map((item, index) => {
+                                            // 在编辑模式下，使用editingData中对应的项目
+                                            const displayItem = isEditing ? editingData.find(d => d.id === item.id) || item : item;
+                                            return (
+                                            <tr
+                                                key={item.id}
+                                                className="hover:bg-gray-50 transition-colors cursor-move"
+                                                draggable
+                                                onDragStart={(e) => handleDragStart(e, index)}
+                                                onDragOver={handleDragOver}
+                                                onDrop={(e) => handleDrop(e, index)}
+                                                onDragEnd={handleDragEnd}
+                                                style={{
+                                                    opacity: draggedIndex === index ? 0.5 : 1,
+                                                    backgroundColor: draggedIndex !== null && draggedIndex !== index ? '#f0fdf4' : 'inherit'
+                                                }}
+                                            >
+                                                <td className="px-4 py-3 text-center text-gray-500 bg-white sticky-left">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedRows.includes(item.id)}
+                                                        onChange={() => handleSelectRow(item.id)}
+                                                        className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                                    />
+                                                </td>
+                                                <td className="px-4 py-3 text-center text-gray-500 bg-white sticky-left">{(pagination.current - 1) * pagination.size + index + 1}</td>
+                                                <td className="px-4 py-3 text-left text-gray-600">{item.dept}</td>
+                                                <td className="px-4 py-3 text-left text-gray-600 font-mono text-xs">{item.code}</td>
+                                                <td className="px-4 py-3 text-left text-gray-700">{item.name}</td>
+
+                                                {/* Plan Specific Columns - moved after project name */}
+                                                {activeTab === 'plan' && (
+                                                    <td className="px-4 py-3 bg-blue-50/20">
+                                                        {isEditing ? (
+                                                            <input
+                                                                type="text"
+                                                                value={formatNumber(displayItem.planNewRevenue)}
+                                                                onChange={(e) => handleEditChange(item.id, 'planNewRevenue', e.target.value)}
+                                                                className={`${inputStyle} text-right border-blue-200 focus:border-primary`}
+                                                                placeholder="请输入金额"
+                                                            />
+                                                        ) : (
+                                                            <span className="text-right block text-gray-700 font-mono">{formatNumber(displayItem.planNewRevenue)}</span>
+                                                        )}
+                                                    </td>
+                                                )}
+
+                                                <td className="px-4 py-3">
+                                                    {activeTab === 'plan' && isEditing ? (
+                                                        <input
+                                                            type="text"
+                                                            value={displayItem.procurementProgress}
+                                                            onChange={(e) => handleEditChange(item.id, 'procurementProgress', e.target.value)}
+                                                            className={inputStyle}
+                                                        />
+                                                    ) : (
+                                                        <span className="text-gray-700">{displayItem.procurementProgress}</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    {activeTab === 'plan' && isEditing ? (
+                                                        <input
+                                                            type="text"
+                                                            value={displayItem.progressNote}
+                                                            onChange={(e) => handleEditChange(item.id, 'progressNote', e.target.value)}
+                                                            className={inputStyle}
+                                                        />
+                                                    ) : (
+                                                        <span className="text-gray-700">{displayItem.progressNote}</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    {activeTab === 'plan' && isEditing ? (
+                                                        <input
+                                                            type="text"
+                                                            value={displayItem.note}
+                                                            onChange={(e) => handleEditChange(item.id, 'note', e.target.value)}
+                                                            className={inputStyle}
+                                                        />
+                                                    ) : (
+                                                        <span className="text-gray-700">{displayItem.note}</span>
+                                                    )}
+                                                </td>
+
+                                                <td className="px-4 py-3 text-left text-gray-600">{displayItem.owner}</td>
+                                                <td className="px-4 py-3 text-left text-gray-600">{displayItem.type}</td>
+                                                <td className="px-4 py-3 text-left text-gray-700">{displayItem.category}</td>
+                                                <td className="px-4 py-3 text-left text-gray-600">{displayItem.manager}</td>
+                                                <td className="px-4 py-3 text-right font-mono" title={displayItem.contractAmount}>{Number(displayItem.contractAmount).toLocaleString()}</td>
+                                                <td className="px-4 py-3 text-left">{displayItem.taxRate}</td>
+                                                <td className="px-4 py-3 text-right">{displayItem.margin}</td>
+
+                                                {/* These columns only show for actual tab */}
+                                                {activeTab === 'actual' && (
+                                                    <td className="px-4 py-3 bg-blue-50/20 text-right font-mono">
+                                                        {isEditing && item.isNewlyAdded ? (
+                                                            <input
+                                                                type="text"
+                                                                value={formatNumber(item.planNewRevenue)}
+                                                                onChange={(e) => handleEditChange(item.id, 'planNewRevenue', e.target.value)}
+                                                                className={`${inputStyle} text-right border-blue-200 focus:border-primary`}
+                                                                placeholder="请输入金额"
+                                                            />
+                                                        ) : (
+                                                            <span className="text-gray-700 font-mono">{formatNumber(item.planNewRevenue)}</span>
+                                                        )}
+                                                    </td>
+                                                )}
+
+                                                {activeTab === 'actual' && (
+                                                    <td className="px-4 py-3 bg-blue-50/20">
+                                                        {isEditing ? (
+                                                            <input
+                                                                type="text"
+                                                                value={formatNumber(item.estRevenue)}
+                                                                onChange={(e) => handleEditChange(item.id, 'estRevenue', e.target.value)}
+                                                                className={`${inputStyle} text-right border-blue-200 focus:border-primary`}
+                                                                placeholder="请输入金额"
+                                                            />
+                                                        ) : (
+                                                            <span className="text-right block text-gray-700 font-mono">{formatNumber(item.estRevenue)}</span>
+                                                        )}
+                                                    </td>
+                                                )}
+
+                                                {activeTab === 'actual' && (
+                                                    <td className="px-4 py-3 text-center">
+                                                        {item.evidence && item.evidence.length > 0 ? (
+                                                            <div className="flex flex-col items-start gap-1 max-w-[200px] mx-auto">
+                                                                {item.evidence.map((ev, idx) => {
+                                                                    const canPreview = /\.(pdf|doc|docx|txt|rtf)$/i.test(ev);
+                                                                    return (
+                                                                        <div key={idx} className="flex items-center gap-2 w-full">
+                                                                            <span
+                                                                                className={`text-xs truncate flex-1 cursor-pointer ${canPreview ? 'text-primary hover:underline font-medium' : 'text-gray-600'}`}
+                                                                                title={ev}
+                                                                                onClick={() => canPreview && handleViewEvidence(ev)}
+                                                                            >
+                                                                                {ev}
+                                                                            </span>
+                                                                            <button
+                                                                                onClick={() => handleDownloadEvidence(ev)}
+                                                                                className="text-gray-400 hover:text-primary text-xs"
+                                                                                title="下载"
+                                                                            >
+                                                                                <Download size={12} />
+                                                                            </button>
+                                                                            {isEditing && item.status !== '已确认' && (
+                                                                                <button
+                                                                                    onClick={() => handleDeleteEvidence(item.id, idx)}
+                                                                                    className="text-gray-400 hover:text-red-500 text-xs"
+                                                                                    title="删除"
+                                                                                >
+                                                                                    ✕
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                                {isEditing && item.status !== '已确认' && item.evidence.length < 10 && (
+                                                                    <button
+                                                                        onClick={() => handleUploadEvidence(item.id)}
+                                                                        className="text-xs text-primary hover:text-primary-hover cursor-pointer mt-1"
+                                                                    >
+                                                                        + 继续上传 ({item.evidence.length}/10)
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        ) : (
+                                                            isEditing && item.status !== '已确认' ? (
+                                                                <button
+                                                                    onClick={() => handleUploadEvidence(item.id)}
+                                                                    className="text-gray-400 text-xs flex items-center justify-center cursor-pointer hover:text-primary"
+                                                                >
+                                                                    <Upload size={12} className="mr-1"/> 上传材料
+                                                                </button>
+                                                            ) : (
+                                                                <span className="text-gray-300 text-xs">
+                                                                    -
+                                                                </span>
+                                                            )
+                                                        )}
+                                                    </td>
+                                                )}
+
+                                                {/* Actual Specific */}
+                                                {activeTab === 'actual' && (
+                                                    <>
+                                                        <td className="px-4 py-3 bg-green-50/20">
+                                                            {isEditing && item.status !== '已确认' ? (
+                                                                <input
+                                                                    type="text"
+                                                                    value={formatNumber(item.actualRevenue)}
+                                                                    onChange={(e) => handleEditChange(item.id, 'actualRevenue', e.target.value)}
+                                                                    className={`${inputStyle} text-right border-green-200 focus:border-success`}
+                                                                    placeholder="请输入金额"
+                                                                />
+                                                            ) : (
+                                                                <span className="text-right block text-gray-700 font-mono">{formatNumber(item.actualRevenue)}</span>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-3 bg-green-50/20">
+                                                            {isEditing && item.status !== '已确认' ? (
+                                                                <input
+                                                                    type="text"
+                                                                    value={formatNumber(item.actualMargin)}
+                                                                    onChange={(e) => handleEditChange(item.id, 'actualMargin', e.target.value)}
+                                                                    className={`${inputStyle} text-right border-green-200 focus:border-success`}
+                                                                    placeholder="请输入金额"
+                                                                />
+                                                            ) : (
+                                                                <span className="text-right block text-gray-700 font-mono">{formatNumber(item.actualMargin)}</span>
+                                                            )}
+                                                        </td>
+                                                    </>
+                                                )}
+
+                                                {activeTab === 'actual' && (
+                                                    <td className="px-4 py-3 text-center text-gray-600">{item.applicant || '-'}</td>
+                                                )}
+
+                                                {activeTab === 'actual' && (
+                                                    <td className="px-4 py-3 text-center">
+                                                        <StatusTag status={item.status} />
+                                                    </td>
+                                                )}
+
+                                                {activeTab === 'actual' && (
+                                                    <td className="px-4 py-3 text-gray-500 text-xs truncate max-w-[150px]" title={item.approval}>{item.approval}</td>
+                                                )}
+
+                                                {activeTab === 'actual' && (
+                                                    <td className="px-4 py-3 text-gray-600">{item.confirmer}</td>
+                                                )}
+
+                                                {activeTab === 'actual' && (
+                                                    <td className="px-4 py-3 text-gray-500 text-xs">{item.confirmTime}</td>
+                                                )}
+
+                                                {/* Actions */}
+                                                <td className="px-4 py-3 text-center sticky right-0 bg-white shadow-sm border-l border-gray-100">
+                                                    {!isEditing && (
+                                                        <>
+                                                            <button
+                                                                onClick={() => handleDelete(item.id)}
+                                                                className="text-red-500 hover:text-red-600 text-xs font-medium"
+                                                            >
+                                                                删除
+                                                            </button>
+                                                            {isFillingOpen && (
+                                                                <button
+                                                                    onClick={() => handleOpenApproval(item)}
+                                                                    className="text-primary hover:text-primary-dark text-xs font-medium ml-2"
+                                                                    title="处理审批"
+                                                                >
+                                                                    处理
+                                                                </button>
+                                                            )}
+                                                        </>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                            );
+                                        })
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* 5. Pagination */}
+                         <div className="flex items-center justify-between px-5 py-4 border-t border-gray-100 bg-white">
+                            <div className="text-sm text-gray-500">
+                                共 <span className="text-gray-800 font-medium">{totalItems}</span> 条
+                                {activeTab === 'plan' && (
+                                    <span className="ml-4 text-success">计划营收合计: ¥{paginatedData.reduce((sum, item) => sum + Number(item.planNewRevenue), 0).toLocaleString()}</span>
+                                )}
+                                {activeTab === 'actual' && (
+                                    <span className="ml-4 text-success">实际营收合计: ¥{paginatedData.reduce((sum, item) => sum + Number(item.actualRevenue), 0).toLocaleString()}</span>
+                                )}
+                            </div>
+                            <div className="flex items-center space-x-2 text-sm">
+                                <button 
+                                    disabled={pagination.current === 1}
+                                    onClick={() => setPagination(p => ({...p, current: p.current - 1}))}
+                                    className="p-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed bg-white"
+                                >
+                                    <ChevronLeft size={16} className="text-gray-500" />
+                                </button>
+                                
+                                {Array.from({length: Math.min(5, totalPages)}, (_, i) => i + 1).map(p => (
+                                    <button
+                                        key={p}
+                                        onClick={() => setPagination(prev => ({...prev, current: p}))}
+                                        className={`w-7 h-7 flex items-center justify-center border rounded text-xs transition-colors ${
+                                            pagination.current === p 
+                                                ? 'bg-primary text-white border-primary' 
+                                                : 'bg-white hover:bg-gray-50 text-gray-600 border-gray-200'
+                                        }`}
+                                    >
+                                        {p}
+                                    </button>
+                                ))}
+                                
+                                <button 
+                                    disabled={pagination.current === totalPages}
+                                        onClick={() => setPagination(p => ({...p, current: p.current + 1}))}
+                                    className="p-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed bg-white"
+                                >
+                                    <ChevronRight size={16} className="text-gray-500" />
+                                </button>
+                                
+                                <select 
+                                    value={pagination.size}
+                                    onChange={(e) => setPagination({current: 1, size: Number(e.target.value)})}
+                                    className="border border-gray-200 rounded px-2 py-1 ml-2 outline-none focus:border-primary text-gray-600 h-7 text-xs bg-white"
+                                >
+                                    <option value={10}>10条/页</option>
+                                    <option value={20}>20条/页</option>
+                                    <option value={50}>50条/页</option>
+                                </select>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    {/* Modals */}
+                    <Modal
+                        isOpen={modalOpen}
+                        onClose={() => setModalOpen(false)}
+                        title="提示"
+                    >
+                        {modalContent}
+                    </Modal>
+
+                    <ApprovalModal
+                        isOpen={approvalModalOpen}
+                        onClose={() => {
+                            setApprovalModalOpen(false);
+                            setSelectedApprovalItem(null);
+                        }}
+                        item={selectedApprovalItem}
+                        onApprove={handleApproveItem}
+                        onReject={handleRejectItem}
+                    />
+
+                    <DeadlineModal
+                        isOpen={deadlineModalOpen}
+                        onClose={() => setDeadlineModalOpen(false)}
+                        onConfirm={(date) => {
+                            setNewDeadline(date);
+                            handleConfirmDeadline();
+                        }}
+                    />
+
+                    <AddProjectModal
+                        isOpen={addModalOpen}
+                        onClose={() => setAddModalOpen(false)}
+                        onAdd={handleAddProjects}
+                        existingData={data}
+                    />
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);;
+    </script>
+</body>
+</html>
